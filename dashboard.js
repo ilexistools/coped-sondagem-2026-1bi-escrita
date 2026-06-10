@@ -68,17 +68,8 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => 
 }[char]));
 
 function parseJsonRows(text) {
-  const payload = JSON.parse(text.replace(/\bNaN\b/g, "null"));
+  const payload = JSON.parse(text);
   return payload.rows || payload;
-}
-
-function parseTSV(text) {
-  const lines = text.replace(/^\uFEFF/, "").trim().split(/\r?\n/);
-  const headers = lines.shift().split("\t");
-  return lines.map((line) => {
-    const cells = line.split("\t");
-    return Object.fromEntries(headers.map((header, index) => [header, cells[index] ?? ""]));
-  });
 }
 
 function normalizeLevel(value) {
@@ -966,10 +957,17 @@ function renderClassesTable(records) {
 }
 
 function renderStudents(records) {
-  const focus = records
+  const focusRecords = records
     .filter((record) => record.gain <= 0 || record.gain >= 2)
-    .sort(sortStudents)
-    .slice(0, 220);
+    .sort(sortStudents);
+  const limit = 220;
+  const focus = focusRecords.slice(0, limit);
+  const note = document.querySelector("#studentsLimitNote");
+  if (note) {
+    note.textContent = focusRecords.length > limit
+      ? `Exibindo os ${formatNumber(limit)} primeiros de ${formatNumber(focusRecords.length)} alunos priorizados pela ordenação atual.`
+      : `Exibindo ${formatNumber(focusRecords.length)} alunos priorizados pela ordenação atual.`;
+  }
 
   document.querySelector("#studentsTable tbody").innerHTML = focus.map((record) => `
     <tr>
@@ -989,7 +987,9 @@ function renderStudents(records) {
       <td>${record.gain > 0 ? "+" : ""}${record.gain}</td>
       <td><span class="status-pill ${statusClass(record.status)}">${record.status}</span></td>
     </tr>
-  `).join("");
+  `).join("") || `
+    <tr><td colspan="7" class="empty-table">Nenhum aluno encontrado para o recorte atual.</td></tr>
+  `;
 }
 
 function sortStudents(a, b) {

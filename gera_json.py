@@ -16,7 +16,7 @@ Campos:
 - e: Nome Escola
 - t: Nome Turma
 - id: Código EOL Estudante
-- n: Nome Estudante
+- n: Primeiro nome do estudante
 - r: Resposta
 - a: Ano
 - b: Bimestre
@@ -24,7 +24,7 @@ Campos:
 
 import json
 import os
-import pandas as pd
+from openpyxl import load_workbook
 
 ARQUIVO = os.path.join(
     os.path.dirname(__file__),
@@ -69,37 +69,63 @@ DRES = {
 def main():
     os.makedirs(os.path.dirname(SAIDA), exist_ok=True)
 
-    xl = pd.ExcelFile(ARQUIVO, engine="openpyxl")
+    wb = load_workbook(ARQUIVO, read_only=True, data_only=True)
     registros = []
 
-    for guia in xl.sheet_names:
+    for guia in wb.sheetnames:
         sigla, nome_curto = DRES.get(guia, (guia, guia))
 
-        df = xl.parse(guia, dtype=str)
-        df.columns = df.columns.str.strip()
+        ws = wb[guia]
+        linhas = ws.iter_rows(values_only=True)
+        cabecalhos = [str(valor).strip() if valor is not None else "" for valor in next(linhas)]
+        indices = {nome: cabecalhos.index(nome) for nome in set(COLUNAS_SAIDA + ["Proficiência", "Questão"])}
+        total_guia = 0
 
-        mascara = (
-            (df["Proficiência"].str.strip() == FILTRO_PROFICIENCIA) &
-            (df["Questão"].str.strip() == FILTRO_QUESTAO)
-        )
-        filtrado = df[mascara].copy()
-        filtrado["Sigla DRE"] = sigla
-        filtrado["Nome DRE"] = nome_curto
+        for linha in linhas:
+            proficiencia = normalizar_texto(linha[indices["Proficiência"]])
+            questao = normalizar_texto(linha[indices["Questão"]])
+            if proficiencia != FILTRO_PROFICIENCIA or questao != FILTRO_QUESTAO:
+                continue
 
-        saida = filtrado[COLUNAS_SAIDA].astype(object)
-        saida = saida.where(saida.notna(), None)
-        registros.extend(saida.values.tolist())
-        print(f"  [{sigla}] {nome_curto}: {len(filtrado)} registros")
+            registro = []
+            for coluna in COLUNAS_SAIDA:
+                if coluna == "Nome DRE":
+                    valor = nome_curto
+                else:
+                    valor = linha[indices[coluna]]
+                if coluna == "Nome Estudante":
+                    valor = primeiro_nome(valor)
+                registro.append(normalizar_saida(valor))
+
+            registros.append(registro)
+            total_guia += 1
+
+        print(f"  [{sigla}] {nome_curto}: {total_guia} registros")
 
     with open(SAIDA, "w", encoding="utf-8") as f:
         json.dump(
             {"schema": SCHEMA, "rows": registros},
             f,
             ensure_ascii=False,
+            allow_nan=False,
             separators=(",", ":"),
         )
 
     print(f"\nTotal: {len(registros)} registros -> {SAIDA}")
+
+
+def normalizar_texto(valor):
+    return str(valor or "").strip()
+
+
+def normalizar_saida(valor):
+    texto = normalizar_texto(valor)
+    return texto if texto else None
+
+
+def primeiro_nome(nome):
+    texto = str(nome or "").strip()
+    return texto.split()[0] if texto else "Aluno"
 
 
 if __name__ == "__main__":

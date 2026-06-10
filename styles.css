@@ -506,6 +506,13 @@ tbody tr:hover {
   overflow: auto;
 }
 
+.table-note {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .table-dl-btn,
 .card-copy-btn {
   display: inline-flex;

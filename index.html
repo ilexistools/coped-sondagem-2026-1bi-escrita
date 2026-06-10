@@ -67,7 +67,7 @@
           <div class="panel-head">
             <div>
               <p class="eyebrow">Ranking</p>
-              <h2>DREs por Índice de Evolução <span class="info-tip" tabindex="0" aria-label="Ajuda: ordena DREs pelo ganho médio de níveis entre a avaliação inicial e o 1º bimestre. Usa as mesmas métricas do ranking de escolas e aparece apenas quando Todas as DREs está selecionado." data-tooltip="Ordena DREs pelo ganho médio de níveis. Usa as mesmas métricas do ranking de escolas e aparece apenas quando Todas as DREs está selecionado.">?</span></h2>
+              <h2>DREs por Índice de Evolução <span class="info-tip" tabindex="0" aria-label="Ajuda: ordena DREs pelo ganho médio de níveis entre a avaliação inicial e o 1º bimestre. Usa as mesmas métricas do ranking de escolas e aparece apenas quando Todas as DREs e Todas as escolas estão selecionadas." data-tooltip="Ordena DREs pelo ganho médio de níveis. Usa as mesmas métricas do ranking de escolas e aparece apenas quando Todas as DREs e Todas as escolas estão selecionadas.">?</span></h2>
             </div>
             <div class="ranking-controls">
               <label>
@@ -323,6 +323,7 @@
           </div>
         </div>
         <div class="table-wrap">
+          <p id="studentsLimitNote" class="table-note"></p>
           <table id="studentsTable">
             <thead>
               <tr>
@@ -462,8 +463,8 @@
     </main>
     </div>
 
-    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
-    <script src="https://unpkg.com/html2canvas/dist/html2canvas.min.js"></script>
+    <script src="vendor/xlsx.full.min.js"></script>
+    <script src="vendor/html2canvas.min.js"></script>
     <script src="dashboard.js"></script>
   </body>
 </html>
