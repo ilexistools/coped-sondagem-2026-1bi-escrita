@@ -1,4 +1,4 @@
-const TSV_PATH = "tsvs/dre-bt_lp_escrita_1_ano.tsv";
+const DATA_PATH = "data/lp_sistema_de_escrita.json";
 const LEVELS = ["PS", "SSVC", "SCVC", "SA", "A"];
 const SANKEY_LEVELS = [...LEVELS].reverse();
 const LEVEL_SCORE = { PS: 1, SSVC: 2, SCVC: 3, SA: 4, A: 5 };
@@ -19,18 +19,35 @@ const STATUS_COLORS = {
 const state = {
   records: [],
   schools: [],
+  dres: [],
+  anos: [],
+  selectedDre: "__all__",
   selectedSchool: "__all__",
+  selectedAno: "__all__",
   scatterXLevel: "PS",
   scatterYLevel: "A",
   rankingSortBy: "avgGain",
   rankingSortDir: "desc",
   search: "",
+  classroomTabs: [],
+  activeClassroomTabId: null,
 };
 
 const formatPct = (value) => `${Math.round(value * 100)}%`;
 const formatNumber = (value) => new Intl.NumberFormat("pt-BR").format(value);
 const formatDecimal = (value) =>
   new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  "\"": "&quot;",
+  "'": "&#39;",
+}[char]));
+
+function parseJsonRows(text) {
+  return JSON.parse(text.replace(/:\s*NaN(?=\s*[,}])/g, ": null"));
+}
 
 function parseTSV(text) {
   const lines = text.replace(/^\uFEFF/, "").trim().split(/\r?\n/);
@@ -107,10 +124,15 @@ function buildStudentRecords(rows) {
   return records;
 }
 
-function filterRecords(records, includeMissing = false) {
+function filterRecords(records, options = {}) {
+  const { includeMissing = false, includeSchool = true } = typeof options === "boolean"
+    ? { includeMissing: options }
+    : options;
   return records.filter((record) => {
     if (!includeMissing && !record.hasPair) return false;
-    if (state.selectedSchool !== "__all__" && record.schoolCode !== state.selectedSchool) return false;
+    if (state.selectedDre !== "__all__" && record.dre !== state.selectedDre) return false;
+    if (state.selectedAno !== "__all__" && record.ano !== state.selectedAno) return false;
+    if (includeSchool && state.selectedSchool !== "__all__" && record.schoolCode !== state.selectedSchool) return false;
     return true;
   });
 }
@@ -171,10 +193,7 @@ function countByLevel(records, field) {
 
 function renderKpis(records) {
   const summary = summarize(records);
-  const missingPair = state.records.filter((record) => {
-    if (state.selectedSchool !== "__all__" && record.schoolCode !== state.selectedSchool) return false;
-    return !record.hasPair;
-  }).length;
+  const missingPair = filterRecords(state.records, { includeMissing: true }).filter((record) => !record.hasPair).length;
   const totalStudentsInScope = summary.paired.length + missingPair || 1;
   const finalAlphaCount = summary.paired.filter((record) => record.final === "A").length;
   const initialAlphaCount = summary.paired.filter((record) => record.initial === "A").length;
@@ -304,8 +323,8 @@ function renderHeatmap(records) {
   `;
 }
 
-function renderRanking() {
-  const stats = [...schoolStats(state.records)].sort((a, b) => {
+function renderRanking(records) {
+  const stats = [...schoolStats(records)].sort((a, b) => {
     const direction = state.rankingSortDir === "asc" ? 1 : -1;
     const key = state.rankingSortBy;
     const aValue = a[key];
@@ -316,8 +335,8 @@ function renderRanking() {
     return direction * ((aValue || 0) - (bValue || 0));
   });
   const rows = stats.map((school) => `
-    <tr class="clickable-row ${state.selectedSchool === school.code ? "selected-row" : ""}" data-school-code="${school.code}" title="Filtrar ${school.school}">
-      <td class="school-name">${school.school}</td>
+    <tr class="clickable-row ${state.selectedSchool === school.code ? "selected-row" : ""}" data-school-code="${escapeHtml(school.code)}" title="Filtrar ${escapeHtml(school.school)}">
+      <td class="school-name">${escapeHtml(school.school)}</td>
       <td>${formatNumber(school.total)}</td>
       <td>${formatPct(school.finalAlphaPct)} <small>${formatNumber(school.finalAlphaCount)}</small></td>
       <td>${school.alphaDeltaPct >= 0 ? "+" : ""}${formatPct(school.alphaDeltaPct)} <small>${school.alphaDeltaCount >= 0 ? "+" : ""}${formatNumber(school.alphaDeltaCount)}</small></td>
@@ -378,8 +397,8 @@ function renderVelocity(records) {
   }).join("");
 }
 
-function renderScatter() {
-  const stats = schoolStats(state.records);
+function renderScatter(records) {
+  const stats = schoolStats(records);
   const width = 1000;
   const height = 450;
   const plot = { left: 82, right: 34, top: 42, bottom: 78 };
@@ -404,12 +423,12 @@ function renderScatter() {
       <g>
         <circle cx="${px}" cy="${py}" r="${selected ? 8 : 5}"
           fill="${selected ? "#c43d3d" : "#1f6feb"}" opacity="${selected ? 0.95 : 0.64}">
-          <title>${school.school}: ${xLevel} inicial ${formatPct(xPct)}, ${yLevel} no 1º bimestre ${formatPct(yPct)}</title>
+          <title>${escapeHtml(school.school)}: ${xLevel} inicial ${formatPct(xPct)}, ${yLevel} no 1º bimestre ${formatPct(yPct)}</title>
         </circle>
         ${selected ? `
           <g>
             <rect class="point-label-bg" x="${labelX - 8}" y="${labelY - 16}" width="142" height="24" rx="5"></rect>
-            <text class="point-label" x="${labelX}" y="${labelY}">${labelText}</text>
+            <text class="point-label" x="${labelX}" y="${labelY}">${escapeHtml(labelText)}</text>
           </g>
         ` : ""}
       </g>
@@ -450,6 +469,94 @@ function statusClass(status) {
   return "bad";
 }
 
+function classroomButton(record, label = "Abrir guia da turma") {
+  return `
+    <button class="classroom-open-btn" type="button"
+      data-classroom-open
+      data-school-code="${escapeHtml(record.schoolCode)}"
+      data-class-name="${escapeHtml(record.className)}"
+      aria-label="${escapeHtml(label)} ${escapeHtml(record.className)}"
+      title="${escapeHtml(label)} ${escapeHtml(record.className)}">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
+        <circle cx="12" cy="12" r="3"></circle>
+      </svg>
+    </button>
+  `;
+}
+
+function classStats(records) {
+  const grouped = new Map();
+  records.forEach((record) => {
+    const key = `${record.schoolCode}::${record.className}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        schoolCode: record.schoolCode,
+        school: record.school,
+        className: record.className,
+        records: [],
+      });
+    }
+    grouped.get(key).records.push(record);
+  });
+
+  return Array.from(grouped.values()).map((group) => {
+    const paired = group.records.filter((record) => record.hasPair);
+    const total = group.records.length;
+    const pairedTotal = paired.length || 1;
+    const finalAlphaCount = paired.filter((record) => record.final === "A").length;
+    const initialAlphaCount = paired.filter((record) => record.initial === "A").length;
+    const improved = paired.filter((record) => record.gain > 0).length;
+    const stable = paired.filter((record) => record.gain === 0).length;
+    const regressed = paired.filter((record) => record.gain < 0).length;
+    const avgGain = paired.reduce((sum, record) => sum + record.gain, 0) / pairedTotal;
+    return {
+      ...group,
+      total,
+      pairedCount: paired.length,
+      missingPair: total - paired.length,
+      finalAlphaCount,
+      alphaDeltaCount: finalAlphaCount - initialAlphaCount,
+      finalAlphaPct: finalAlphaCount / pairedTotal,
+      improvedPct: improved / pairedTotal,
+      stablePct: stable / pairedTotal,
+      regressedPct: regressed / pairedTotal,
+      avgGain,
+    };
+  }).sort((a, b) =>
+    a.school.localeCompare(b.school, "pt-BR") ||
+    a.className.localeCompare(b.className, "pt-BR", { numeric: true })
+  );
+}
+
+function renderClassesTable(records) {
+  const rows = classStats(records).map((group) => {
+    const recordRef = {
+      schoolCode: group.schoolCode,
+      className: group.className,
+    };
+    return `
+      <tr>
+        <td>${classroomButton(recordRef, "Abrir guia da turma")}</td>
+        <td class="school-name">${escapeHtml(group.school)}</td>
+        <td><strong>${escapeHtml(group.className)}</strong></td>
+        <td>${formatNumber(group.total)}</td>
+        <td>${formatNumber(group.pairedCount)} <small>${formatPct(group.pairedCount / Math.max(1, group.total))}</small></td>
+        <td>${formatNumber(group.missingPair)}</td>
+        <td>${formatPct(group.finalAlphaPct)} <small>${formatNumber(group.finalAlphaCount)}</small></td>
+        <td>${formatPct(group.improvedPct)}</td>
+        <td>${formatPct(group.stablePct)}</td>
+        <td>${formatPct(group.regressedPct)}</td>
+        <td><strong>${formatDecimal(group.avgGain)}</strong></td>
+      </tr>
+    `;
+  }).join("");
+
+  document.querySelector("#classesTable tbody").innerHTML = rows || `
+    <tr><td colspan="11" class="empty-table">Nenhuma turma encontrada para o recorte atual.</td></tr>
+  `;
+}
+
 function renderStudents(records) {
   const term = state.search.trim().toLocaleLowerCase("pt-BR");
   const focus = records
@@ -460,9 +567,17 @@ function renderStudents(records) {
 
   document.querySelector("#studentsTable tbody").innerHTML = focus.map((record) => `
     <tr>
-      <td><strong>${record.name}</strong></td>
-      <td>${record.school}</td>
-      <td>${record.className}</td>
+      <td><strong>${escapeHtml(record.name)}</strong></td>
+      <td>${escapeHtml(record.school)}</td>
+      <td>
+        <button class="class-link" type="button"
+          data-classroom-open
+          data-school-code="${escapeHtml(record.schoolCode)}"
+          data-class-name="${escapeHtml(record.className)}"
+          title="Abrir guia da turma ${escapeHtml(record.className)}">
+          ${escapeHtml(record.className)}
+        </button>
+      </td>
       <td>${record.initial}</td>
       <td>${record.final}</td>
       <td>${record.gain > 0 ? "+" : ""}${record.gain}</td>
@@ -471,53 +586,258 @@ function renderStudents(records) {
   `).join("");
 }
 
+function getClassroomTabId(schoolCode, className) {
+  return `${schoolCode}::${className}`;
+}
+
+function getClassroomRecords(tab) {
+  if (!tab?.schoolCode || !tab?.className) return [];
+  return filterRecords(state.records, { includeMissing: true }).filter((record) =>
+    record.schoolCode === tab.schoolCode && record.className === tab.className
+  );
+}
+
+function getFirstName(name) {
+  return String(name || "").trim().split(/\s+/)[0] || "Aluno";
+}
+
+function evolutionMarker(record, period) {
+  if (period !== "final") return "";
+  const marker = !record.hasPair
+    ? { symbol: "*", label: "Sem comparação", className: "unknown" }
+    : record.gain > 0
+    ? { symbol: "↑", label: "Evoluiu", className: "up" }
+    : record.gain < 0
+      ? { symbol: "↓", label: "Baixou", className: "down" }
+      : { symbol: "–", label: "Manteve", className: "same" };
+  return `
+    <span class="student-evolution ${marker.className}" title="${marker.label}: ${record.initial} para ${record.final}" aria-label="${marker.label}">
+      ${marker.symbol}
+    </span>
+  `;
+}
+
+function renderClassroomView(tab) {
+  const records = getClassroomRecords(tab);
+  const period = tab.period;
+  const field = period === "initial" ? "initial" : "final";
+  const schoolName = records[0]?.school || getSchoolLabel();
+  const total = Math.max(1, records.length);
+  const missing = records.filter((record) => !record[field]);
+  const groups = LEVELS.map((level) => ({
+    level,
+    color: LEVEL_COLORS[level],
+    records: records.filter((record) => record[field] === level),
+  })).concat([{
+    level: "Sem dado",
+    color: "#8a94a6",
+    records: missing,
+  }]);
+
+  return `
+    <div class="classroom-view-head">
+      <div>
+        <p class="eyebrow">Visualização da turma</p>
+        <h2>Turma ${escapeHtml(tab.className)}</h2>
+        <p class="classroom-subtitle">${escapeHtml(schoolName)} · ${formatNumber(records.length)} alunos no recorte</p>
+      </div>
+      <div class="classroom-toolbar" aria-label="Selecionar período">
+        <button type="button" data-classroom-period="initial" class="${period === "initial" ? "active" : ""}">Inicial</button>
+        <button type="button" data-classroom-period="final" class="${period === "final" ? "active" : ""}">1º bimestre</button>
+      </div>
+    </div>
+    ${period === "final" ? `
+      <div class="classroom-legend" aria-label="Legenda da evolução">
+        <span><b class="student-evolution up">↑</b> Evoluiu</span>
+        <span><b class="student-evolution same">–</b> Manteve</span>
+        <span><b class="student-evolution down">↓</b> Baixou</span>
+        <span><b class="student-evolution unknown">*</b> Sem comparação</span>
+      </div>
+    ` : ""}
+    ${records.length ? `
+      <div class="classroom-stage">
+      ${groups.map((group) => {
+        const count = group.records.length;
+        const pct = count / total;
+        return `
+          <section class="classroom-group">
+            <div class="classroom-group-head">
+              <span class="level-swatch" style="background:${group.color}"></span>
+              <strong>${group.level}</strong>
+              <small>${formatNumber(count)} · ${formatPct(pct)}</small>
+            </div>
+            <div class="student-cloud" aria-label="${group.level}: ${formatNumber(count)} alunos">
+              ${group.records.map((record) => `
+                <span class="student-marker" style="--student-color:${group.color}" title="${escapeHtml(record.name)} · ${group.level}">
+                  ${evolutionMarker(record, period)}
+                  <span class="student-head"></span>
+                  <span class="student-body"></span>
+                  <span class="student-name">${escapeHtml(getFirstName(record.name))}</span>
+                </span>
+              `).join("")}
+            </div>
+          </section>
+        `;
+      }).join("")}
+      </div>
+    ` : `
+      <div class="empty-state">Nenhum aluno encontrado para esta turma no recorte atual.</div>
+    `}
+  `;
+}
+
+function openClassroomTab(schoolCode, className) {
+  const id = getClassroomTabId(schoolCode, className);
+  if (!state.classroomTabs.some((tab) => tab.id === id)) {
+    state.classroomTabs.push({ id, schoolCode, className, period: "final" });
+  }
+  state.activeClassroomTabId = id;
+  renderClassroomTabs();
+  document.querySelector("#classroomTabsPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderClassroomTabs() {
+  const panel = document.querySelector("#classroomTabsPanel");
+  const tabList = document.querySelector("#classroomTabList");
+  const content = document.querySelector("#classroomTabContent");
+  panel.hidden = state.classroomTabs.length === 0;
+  if (!state.classroomTabs.length) {
+    tabList.innerHTML = "";
+    content.innerHTML = "";
+    return;
+  }
+
+  if (!state.activeClassroomTabId || !state.classroomTabs.some((tab) => tab.id === state.activeClassroomTabId)) {
+    state.activeClassroomTabId = state.classroomTabs[0].id;
+  }
+
+  tabList.innerHTML = state.classroomTabs.map((tab) => {
+    const active = tab.id === state.activeClassroomTabId;
+    return `
+      <button class="class-tab ${active ? "active" : ""}" type="button" role="tab"
+        aria-selected="${active}" data-class-tab="${escapeHtml(tab.id)}">
+        <span>Turma ${escapeHtml(tab.className)}</span>
+        <small>${escapeHtml(tab.schoolCode)}</small>
+        <span class="class-tab-close" data-close-class-tab="${escapeHtml(tab.id)}" aria-label="Fechar turma">&times;</span>
+      </button>
+    `;
+  }).join("");
+
+  const activeTab = state.classroomTabs.find((tab) => tab.id === state.activeClassroomTabId);
+  content.innerHTML = activeTab ? renderClassroomView(activeTab) : "";
+}
+
+function getSchoolLabel() {
+  if (state.selectedSchool === "__all__") return "Todas as escolas";
+  return state.schools.find(([code]) => code === state.selectedSchool)?.[1] || "Escola selecionada";
+}
+
+function renderFilterSummary(records) {
+  const filters = [
+    ["DRE", state.selectedDre === "__all__" ? "Todas as DREs" : state.selectedDre],
+    ["Escola", getSchoolLabel()],
+    ["Ano", state.selectedAno === "__all__" ? "Todos os anos" : `${state.selectedAno}º ano`],
+    ["Alunos no recorte", formatNumber(records.length)],
+  ];
+
+  document.querySelector("#filterSummary").innerHTML = `
+    <div>
+      <p class="eyebrow">Filtros aplicados</p>
+      <strong>Recorte atual</strong>
+    </div>
+    <div class="filter-summary-items">
+      ${filters.map(([label, value]) => `
+        <span class="filter-badge">
+          <small>${label}</small>
+          <b>${escapeHtml(value)}</b>
+        </span>
+      `).join("")}
+    </div>
+  `;
+}
+
 function populateFilters() {
-  const schools = Array.from(new Map(state.records.map((r) => [r.schoolCode, r.school])).entries())
+  const dres = Array.from(new Set(state.records.map((r) => r.dre).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const anos = Array.from(new Set(state.records.map((r) => r.ano).filter(Boolean)))
+    .sort((a, b) => Number(a) - Number(b) || String(a).localeCompare(String(b), "pt-BR"));
+  state.dres = dres;
+  state.anos = anos;
+  document.querySelector("#dreFilter").innerHTML =
+    `<option value="__all__">Todas as DREs</option>` +
+    dres.map((dre) => `<option value="${escapeHtml(dre)}">${escapeHtml(dre)}</option>`).join("");
+  document.querySelector("#anoFilter").innerHTML =
+    `<option value="__all__">Todos os anos</option>` +
+    anos.map((ano) => `<option value="${escapeHtml(ano)}">${escapeHtml(ano)}º ano</option>`).join("");
+  populateSchoolFilter();
+}
+
+function populateSchoolFilter() {
+  const scopedRecords = filterRecords(state.records, { includeMissing: true, includeSchool: false });
+  const schools = Array.from(new Map(scopedRecords.map((r) => [r.schoolCode, r.school])).entries())
     .sort(([, a], [, b]) => a.localeCompare(b, "pt-BR"));
   state.schools = schools;
+  const hasSelectedSchool = state.selectedSchool === "__all__" || schools.some(([code]) => code === state.selectedSchool);
+  if (!hasSelectedSchool) state.selectedSchool = "__all__";
   document.querySelector("#schoolFilter").innerHTML =
     `<option value="__all__">Todas as escolas</option>` +
-    schools.map(([code, name]) => `<option value="${code}">${name}</option>`).join("");
+    schools.map(([code, name]) => `<option value="${escapeHtml(code)}">${escapeHtml(name)}</option>`).join("");
+  document.querySelector("#schoolFilter").value = state.selectedSchool;
 }
 
 function render() {
   const records = filterRecords(state.records);
+  const recordsInScope = filterRecords(state.records, { includeMissing: true });
+  const comparisonRecords = filterRecords(state.records, { includeSchool: false });
+  renderFilterSummary(recordsInScope);
   renderKpis(records);
   renderSankey(records);
   renderHeatmap(records);
   renderDistribution(records);
   renderVelocity(records);
-  renderRanking();
-  renderScatter();
+  renderRanking(comparisonRecords);
+  renderScatter(comparisonRecords);
+  renderClassesTable(recordsInScope);
   renderStudents(records);
+  renderClassroomTabs();
 }
 
 async function init() {
-  const response = await fetch(TSV_PATH);
-  if (!response.ok) throw new Error(`Falha ao carregar ${TSV_PATH}`);
-  const rows = parseTSV(await response.text());
+  const response = await fetch(DATA_PATH);
+  if (!response.ok) throw new Error(`Falha ao carregar ${DATA_PATH}`);
+  const rows = parseJsonRows(await response.text());
   state.records = buildStudentRecords(rows);
   populateFilters();
 
+  document.querySelector("#dreFilter").addEventListener("change", (event) => {
+    state.selectedDre = event.target.value;
+    populateSchoolFilter();
+    render();
+  });
+  document.querySelector("#anoFilter").addEventListener("change", (event) => {
+    state.selectedAno = event.target.value;
+    populateSchoolFilter();
+    render();
+  });
   document.querySelector("#schoolFilter").addEventListener("change", (event) => {
     state.selectedSchool = event.target.value;
     render();
   });
   document.querySelector("#scatterXLevel").addEventListener("change", (event) => {
     state.scatterXLevel = event.target.value;
-    renderScatter();
+    renderScatter(filterRecords(state.records, { includeSchool: false }));
   });
   document.querySelector("#scatterYLevel").addEventListener("change", (event) => {
     state.scatterYLevel = event.target.value;
-    renderScatter();
+    renderScatter(filterRecords(state.records, { includeSchool: false }));
   });
   document.querySelector("#rankingSortBy").addEventListener("change", (event) => {
     state.rankingSortBy = event.target.value;
-    renderRanking();
+    renderRanking(filterRecords(state.records, { includeSchool: false }));
   });
   document.querySelector("#rankingSortDir").addEventListener("change", (event) => {
     state.rankingSortDir = event.target.value;
-    renderRanking();
+    renderRanking(filterRecords(state.records, { includeSchool: false }));
   });
   document.querySelector("#rankingTable tbody").addEventListener("click", (event) => {
     const row = event.target.closest("[data-school-code]");
@@ -529,6 +849,46 @@ async function init() {
   document.querySelector("#studentSearch").addEventListener("input", (event) => {
     state.search = event.target.value;
     renderStudents(filterRecords(state.records));
+  });
+  document.querySelector("#studentsTable tbody").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-classroom-open]");
+    if (!button) return;
+    openClassroomTab(button.dataset.schoolCode, button.dataset.className);
+  });
+  document.querySelector("#classesTable tbody").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-classroom-open]");
+    if (!button) return;
+    openClassroomTab(button.dataset.schoolCode, button.dataset.className);
+  });
+  document.querySelector("#classroomTabsPanel").addEventListener("click", (event) => {
+    const closeButton = event.target.closest("[data-close-class-tab]");
+    if (closeButton) {
+      const id = closeButton.dataset.closeClassTab;
+      const index = state.classroomTabs.findIndex((tab) => tab.id === id);
+      state.classroomTabs = state.classroomTabs.filter((tab) => tab.id !== id);
+      if (state.activeClassroomTabId === id) {
+        state.activeClassroomTabId = state.classroomTabs[Math.max(0, index - 1)]?.id || state.classroomTabs[0]?.id || null;
+      }
+      renderClassroomTabs();
+      return;
+    }
+    const tabButton = event.target.closest("[data-class-tab]");
+    if (tabButton) {
+      state.activeClassroomTabId = tabButton.dataset.classTab;
+      renderClassroomTabs();
+      return;
+    }
+    const periodButton = event.target.closest("[data-classroom-period]");
+    if (periodButton) {
+      const activeTab = state.classroomTabs.find((tab) => tab.id === state.activeClassroomTabId);
+      if (activeTab) activeTab.period = periodButton.dataset.classroomPeriod;
+      renderClassroomTabs();
+    }
+  });
+  document.querySelector("#closeAllClassTabs").addEventListener("click", () => {
+    state.classroomTabs = [];
+    state.activeClassroomTabId = null;
+    renderClassroomTabs();
   });
 
   const appLayout = document.querySelector(".app-layout");

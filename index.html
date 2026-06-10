@@ -42,6 +42,7 @@
       <div class="sidebar-resizer"></div>
 
     <main>
+      <section id="filterSummary" class="filter-summary" aria-label="Resumo dos filtros aplicados"></section>
       <section id="kpis" class="kpi-grid" aria-label="Indicadores principais"></section>
 
       <section class="dashboard-grid">
@@ -169,6 +170,47 @@
             </table>
           </div>
         </article>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Turmas</p>
+            <h2>Turmas do recorte <span class="info-tip" tabindex="0" aria-label="Ajuda: lista as turmas conforme os filtros atuais, com totais, pares válidos, alfabéticos no 1º bimestre e evolução. O botão de visualização abre a sala da turma." data-tooltip="Lista turmas no recorte atual, com totais, pares válidos, alfabéticos no 1º bimestre e evolução. O botão abre a visualização da sala.">?</span></h2>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table id="classesTable">
+            <thead>
+              <tr>
+                <th>Ver</th>
+                <th>Escola</th>
+                <th>Turma</th>
+                <th>Alunos</th>
+                <th>Par válido</th>
+                <th>Sem par</th>
+                <th>Alfabéticos (1ºBI)</th>
+                <th>Melhoraram</th>
+                <th>Mantiveram</th>
+                <th>Baixaram</th>
+                <th>Índice de Evolução</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="classroomTabsPanel" class="panel classroom-tabs-panel" hidden>
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Salas abertas</p>
+            <h2>Visualização das turmas</h2>
+          </div>
+          <button id="closeAllClassTabs" class="text-action" type="button">Fechar todas</button>
+        </div>
+        <div id="classroomTabList" class="classroom-tab-list" role="tablist" aria-label="Turmas abertas"></div>
+        <div id="classroomTabContent" class="classroom-tab-content"></div>
       </section>
 
       <section class="panel">
