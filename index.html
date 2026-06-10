@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BI Sondagem de Escrita - 1º Ano</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Sondagem de Língua Portuguesa - Escrita - 1º BI 2026</p>
+        <h1>Resultados de Sondagem</h1>
+      </div>
+    </header>
+
+    <div class="app-layout">
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <p class="sidebar-title">Filtros</p>
+          <button id="sidebarToggle" class="sidebar-toggle" aria-label="Recolher filtros" aria-expanded="true">&#8249;</button>
+        </div>
+        <label>
+          DRE
+          <select id="dreFilter">
+            <option value="__all__">Todas as DREs</option>
+          </select>
+        </label>
+        <label>
+          Escola
+          <select id="schoolFilter">
+            <option value="__all__">Todas as escolas</option>
+          </select>
+        </label>
+        <label>
+          Ano
+          <select id="anoFilter">
+            <option value="__all__">Todos os anos</option>
+          </select>
+        </label>
+      </aside>
+      <div class="sidebar-resizer"></div>
+
+    <main>
+      <section id="kpis" class="kpi-grid" aria-label="Indicadores principais"></section>
+
+      <section class="dashboard-grid">
+        <article class="panel flow-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Movimentação geral</p>
+              <h2>Fluxo entre hipóteses <span class="info-tip" tabindex="0" aria-label="Ajuda: mostra quantos estudantes migraram de uma hipótese de escrita inicial para outra no 1º bimestre. Usa apenas alunos com par válido e calcula percentuais sobre esse total." data-tooltip="Mostra quantos estudantes migraram de uma hipótese inicial para outra no 1º bimestre. Usa apenas alunos com par válido; os percentuais são sobre esse total.">?</span></h2>
+            </div>
+            <span id="pairCount" class="badge"></span>
+          </div>
+          <div id="sankey" class="sankey" role="img" aria-label="Fluxo de evolução entre níveis de escrita"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Mapa de calor</p>
+              <h2>Distribuição por período <span class="info-tip" tabindex="0" aria-label="Ajuda: compara a quantidade e o percentual de alunos em cada hipótese na avaliação inicial e no 1º bimestre. Usa apenas alunos com par válido." data-tooltip="Compara quantidade e percentual de alunos em cada hipótese na Inicial e no 1º bimestre. Usa apenas alunos com par válido.">?</span></h2>
+            </div>
+          </div>
+          <div id="heatmap" class="heatmap"></div>
+        </article>
+      </section>
+
+      <section class="dashboard-grid">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Análise da escola</p>
+              <h2>Distribuição por nível <span class="info-tip" tabindex="0" aria-label="Ajuda: mostra a distribuição percentual das hipóteses na inicial e no 1º bimestre para o recorte selecionado. As barras usam as cores de cada hipótese." data-tooltip="Mostra a distribuição percentual das hipóteses na Inicial e no 1º bimestre para o recorte selecionado.">?</span></h2>
+            </div>
+          </div>
+          <div id="distribution" class="distribution"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Velocidade</p>
+              <h2>Classificação da evolução <span class="info-tip" tabindex="0" aria-label="Ajuda: classifica o ganho individual entre inicial e 1º bimestre. Alta é ganho de dois ou mais níveis, média é um nível, estável é zero, baixa é ganho negativo." data-tooltip="Classifica o ganho individual: Alta = +2 ou mais níveis; Média = +1; Estável = 0; Baixa = valor negativo.">?</span></h2>
+            </div>
+          </div>
+          <div id="velocity" class="velocity"></div>
+        </article>
+      </section>
+
+      <section class="dashboard-grid">
+        <article class="panel scatter-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Comparação</p>
+              <h2>Perfil das escolas <span class="info-tip" tabindex="0" aria-label="Ajuda: cada ponto representa uma escola. O eixo X mostra o percentual da hipótese escolhida na inicial, e o eixo Y mostra o percentual da hipótese escolhida no 1º bimestre." data-tooltip="Cada ponto é uma escola. X mostra % da hipótese escolhida na Inicial; Y mostra % da hipótese escolhida no 1º bimestre.">?</span></h2>
+            </div>
+            <div class="scatter-controls">
+              <label>
+                Eixo X
+                <select id="scatterXLevel">
+                  <option value="PS">PS inicial</option>
+                  <option value="SSVC">SSVC inicial</option>
+                  <option value="SCVC">SCVC inicial</option>
+                  <option value="SA">SA inicial</option>
+                  <option value="A">A inicial</option>
+                </select>
+              </label>
+              <label>
+                Eixo Y
+                <select id="scatterYLevel">
+                  <option value="PS">PS 1ºBI</option>
+                  <option value="SSVC">SSVC 1ºBI</option>
+                  <option value="SCVC">SCVC 1ºBI</option>
+                  <option value="SA">SA 1ºBI</option>
+                  <option value="A" selected>A 1ºBI</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div id="scatter" class="scatter" role="img" aria-label="Dispersão de escolas por hipótese inicial e hipótese no primeiro bimestre"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Ranking</p>
+              <h2>Escolas por Índice de Evolução <span class="info-tip" tabindex="0" aria-label="Ajuda: ordena escolas pelo ganho médio de níveis entre a avaliação inicial e o 1º bimestre. Cada hipótese é convertida em escala de PS igual a 1 até A igual a 5." data-tooltip="Ordena escolas pelo ganho médio de níveis. Cada hipótese vira escala numérica: PS=1, SSVC=2, SCVC=3, SA=4, A=5.">?</span></h2>
+            </div>
+            <div class="ranking-controls">
+              <label>
+                Ordenar por
+                <select id="rankingSortBy">
+                  <option value="avgGain">Índice de Evolução</option>
+                  <option value="finalAlphaPct">Alfabéticos (1ºBI)</option>
+                  <option value="alphaDeltaPct">Alfabéticos (diferença)</option>
+                  <option value="improvedPct">Melhoraram</option>
+                  <option value="stablePct">Mantiveram</option>
+                  <option value="regressedPct">Baixaram</option>
+                  <option value="total">Alunos</option>
+                  <option value="school">Escola</option>
+                </select>
+              </label>
+              <label>
+                Direção
+                <select id="rankingSortDir">
+                  <option value="desc">DESC</option>
+                  <option value="asc">ASC</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table id="rankingTable">
+              <thead>
+                <tr>
+                  <th>Escola</th>
+                  <th>Alunos</th>
+                  <th>Alfabéticos (1ºBI)</th>
+                  <th>Alfabéticos (diferença)</th>
+                  <th>Melhoraram</th>
+                  <th>Mantiveram</th>
+                  <th>Baixaram</th>
+                  <th>Índice de Evolução</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Acompanhamento</p>
+            <h2>Alunos que pedem atenção <span class="info-tip" tabindex="0" aria-label="Ajuda: lista alunos com baixa, estabilidade ou alta evolução, priorizando casos para acompanhamento pedagógico. Usa o ganho entre a hipótese inicial e a do 1º bimestre." data-tooltip="Lista alunos com baixa, estabilidade ou alta evolução, priorizando casos para acompanhamento pedagógico. Usa o ganho Inicial -> 1º bimestre.">?</span></h2>
+          </div>
+          <input id="studentSearch" type="search" placeholder="Buscar aluno ou escola">
+        </div>
+        <div class="table-wrap">
+          <table id="studentsTable">
+            <thead>
+              <tr>
+                <th>Aluno</th>
+                <th>Escola</th>
+                <th>Turma</th>
+                <th>Inicial</th>
+                <th>1º bimestre</th>
+                <th>Ganho</th>
+                <th>Situação</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    </div>
+
+    <script src="dashboard.js"></script>
+  </body>
+</html>
