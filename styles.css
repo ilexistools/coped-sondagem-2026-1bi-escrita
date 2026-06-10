@@ -506,6 +506,34 @@ tbody tr:hover {
   overflow: auto;
 }
 
+.table-dl-btn,
+.card-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.table-dl-btn:hover,
+.card-copy-btn:hover {
+  background: var(--line);
+  color: var(--ink);
+  border-color: var(--muted);
+}
+.card-copy-btn.copying {
+  opacity: 0.5;
+  cursor: wait;
+}
+.card-copy-btn.copied {
+  color: #2da44e;
+  border-color: #2da44e;
+}
+
 .class-link {
   display: inline-flex;
   min-width: 44px;
@@ -1153,4 +1181,135 @@ tbody tr:hover {
   .panel {
     padding: 14px;
   }
+}
+
+/* ---- View switcher ---- */
+.view-switcher {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.view-btn {
+  flex: 1;
+  padding: 7px 4px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+
+.view-btn.active {
+  background: var(--blue);
+  color: #fff;
+}
+
+.view-btn:not(.active):hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.app-layout.sidebar--hidden .view-switcher {
+  display: none;
+}
+
+/* ---- View containers ---- */
+.view-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.view-panel[hidden] {
+  display: none;
+}
+
+/* ---- Consolidado charts grid ---- */
+.consolidado-charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+@media (max-width: 760px) {
+  .consolidado-charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Consolidado DRE chart ---- */
+.dre-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-bottom: 14px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.legend-swatch {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+}
+
+.dre-chart-rows {
+  display: grid;
+  gap: 7px;
+}
+
+.dre-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dre-bar-label {
+  flex: 0 0 110px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dre-bar-track {
+  display: flex;
+  flex: 1 1 auto;
+  height: 26px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.dre-bar-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-width: 1px;
+}
+
+.dre-seg-label {
+  color: #fff;
+  font-size: 0.67rem;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0,0,0,.35);
 }

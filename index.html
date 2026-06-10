@@ -38,11 +38,17 @@
             <option value="__all__">Todos os anos</option>
           </select>
         </label>
+        <div class="view-switcher" role="group" aria-label="Modo de visualização">
+          <button id="switchEvolucao" class="view-btn active" type="button">Evolução</button>
+          <button id="switchConsolidado" class="view-btn" type="button">Consolidado</button>
+        </div>
       </aside>
       <div class="sidebar-resizer"></div>
 
     <main>
       <section id="filterSummary" class="filter-summary" aria-label="Resumo dos filtros aplicados"></section>
+
+      <div id="view-evolucao" class="view-panel">
       <section id="kpis" class="kpi-grid" aria-label="Indicadores principais"></section>
 
       <section class="dashboard-grid">
@@ -84,6 +90,7 @@
                   <option value="asc">ASC</option>
                 </select>
               </label>
+              <button class="table-dl-btn" data-table="dreRankingTable" data-filename="dre-ranking" title="Baixar tabela (.xlsx)" type="button"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 13h10"/></svg></button>
             </div>
           </div>
           <div class="table-wrap">
@@ -198,6 +205,7 @@
                   <option value="asc">ASC</option>
                 </select>
               </label>
+              <button class="table-dl-btn" data-table="rankingTable" data-filename="ranking-escolas" title="Baixar tabela (.xlsx)" type="button"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 13h10"/></svg></button>
             </div>
           </div>
           <div class="table-wrap">
@@ -248,6 +256,7 @@
                 <option value="desc">DESC</option>
               </select>
             </label>
+            <button class="table-dl-btn" data-table="classesTable" data-filename="turmas" data-skip-col="0" title="Baixar tabela (.xlsx)" type="button"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 13h10"/></svg></button>
           </div>
         </div>
         <div class="table-wrap">
@@ -310,7 +319,7 @@
                 <option value="desc">DESC</option>
               </select>
             </label>
-            <input id="studentSearch" type="search" placeholder="Buscar aluno ou escola">
+<button class="table-dl-btn" data-table="studentsTable" data-filename="alunos" title="Baixar tabela (.xlsx)" type="button"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 13h10"/></svg></button>
           </div>
         </div>
         <div class="table-wrap">
@@ -330,9 +339,131 @@
           </table>
         </div>
       </section>
+      </div>
+
+      <div id="view-consolidado" class="view-panel" hidden>
+        <section id="consolidado-kpis" class="kpi-grid" aria-label="Indicadores consolidados"></section>
+
+        <section class="consolidado-charts-grid">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Desempenho</p>
+                <h2>Sistema de escrita</h2>
+              </div>
+              <div class="ranking-controls">
+                <label>
+                  Período
+                  <select id="consolidadoChartPeriod">
+                    <option value="initial">Inicial</option>
+                    <option value="final" selected>1º bimestre</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div id="consolidado-desempenho"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Cobertura</p>
+                <h2>Participação</h2>
+              </div>
+            </div>
+            <div id="consolidado-participacao"></div>
+          </article>
+        </section>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Distribuição geral</p>
+              <h2>Hipóteses por período</h2>
+            </div>
+          </div>
+          <div id="consolidado-heatmap" class="heatmap"></div>
+        </article>
+
+        <article id="consolidado-dre-panel" class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Comparação por DRE</p>
+              <h2>Distribuição de hipóteses por DRE</h2>
+            </div>
+            <div class="ranking-controls">
+              <label>
+                Período
+                <select id="consolidadoDrePeriod">
+                  <option value="initial">Inicial</option>
+                  <option value="final" selected>1º bimestre</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div id="consolidado-dre-chart"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Ranking</p>
+              <h2>Escolas por distribuição de hipóteses</h2>
+            </div>
+            <div class="ranking-controls">
+              <label>
+                Ordenar por
+                <select id="consolidadoSchoolSortBy">
+                  <option value="A">Alfabéticos (A)</option>
+                  <option value="SA">Silábico-alfabéticos (SA)</option>
+                  <option value="SCVC">Sil. c/ valor (SCVC)</option>
+                  <option value="SSVC">Sil. s/ valor (SSVC)</option>
+                  <option value="PS">Pré-silábicos (PS)</option>
+                  <option value="sem">Sem dado</option>
+                  <option value="total">Total</option>
+                  <option value="school">Escola</option>
+                </select>
+              </label>
+              <label>
+                Direção
+                <select id="consolidadoSchoolSortDir">
+                  <option value="desc">DESC</option>
+                  <option value="asc">ASC</option>
+                </select>
+              </label>
+              <label>
+                Período
+                <select id="consolidadoSchoolPeriod">
+                  <option value="initial">Inicial</option>
+                  <option value="final" selected>1º bimestre</option>
+                </select>
+              </label>
+              <button class="table-dl-btn" data-table="consolidado-school-table" data-filename="consolidado-escolas" title="Baixar tabela (.xlsx)" type="button"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 13h10"/></svg></button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table id="consolidado-school-table">
+              <thead>
+                <tr>
+                  <th>Escola</th>
+                  <th>Total</th>
+                  <th>PS</th>
+                  <th>SSVC</th>
+                  <th>SCVC</th>
+                  <th>SA</th>
+                  <th>A</th>
+                  <th>Sem dado</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+      </div>
     </main>
     </div>
 
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <script src="https://unpkg.com/html2canvas/dist/html2canvas.min.js"></script>
     <script src="dashboard.js"></script>
   </body>
 </html>

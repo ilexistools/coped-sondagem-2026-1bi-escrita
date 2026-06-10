@@ -45,9 +45,14 @@ const state = {
   classesSortDir: "asc",
   studentSortBy: "gain",
   studentSortDir: "asc",
-  search: "",
   classroomTabs: [],
   activeClassroomTabId: null,
+  viewMode: "evolucao",
+  consolidadoDrePeriod: "final",
+  consolidadoSchoolPeriod: "final",
+  consolidadoSchoolSortBy: "A",
+  consolidadoSchoolSortDir: "desc",
+  consolidadoChartPeriod: "final",
 };
 
 const formatPct = (value) => `${Math.round(value * 100)}%`;
@@ -513,6 +518,284 @@ function renderVelocity(records) {
   }).join("");
 }
 
+function consolidadoLevelStats(records, field) {
+  const counts = { PS: 0, SSVC: 0, SCVC: 0, SA: 0, A: 0, sem: 0 };
+  records.forEach((r) => {
+    const v = r[field];
+    if (LEVEL_SCORE[v]) counts[v]++;
+    else counts.sem++;
+  });
+  const total = records.length || 1;
+  const pct = {};
+  [...LEVELS, "sem"].forEach((l) => { pct[l] = counts[l] / total; });
+  return { counts, pct, total: records.length };
+}
+
+function renderConsolidadoKpis(records) {
+  const initial = consolidadoLevelStats(records, "initial");
+  const fin = consolidadoLevelStats(records, "final");
+  const items = [
+    ["Total de alunos", formatNumber(records.length), "no recorte selecionado", "Total de alunos registrados no recorte, incluindo aqueles sem par válido."],
+    ["Alfabéticos – Inicial", formatPct(initial.pct.A), `${formatNumber(initial.counts.A)} alunos`, "Percentual de alunos na hipótese A na avaliação inicial, sobre todos os alunos do recorte."],
+    ["Alfabéticos – 1ºBI", formatPct(fin.pct.A), `${formatNumber(fin.counts.A)} alunos`, "Percentual de alunos na hipótese A no 1º bimestre, sobre todos os alunos do recorte."],
+    ["Sem registro – 1ºBI", formatPct(fin.pct.sem), `${formatNumber(fin.counts.sem)} alunos`, "Alunos sem hipótese registrada ou inválida no 1º bimestre."],
+  ];
+  document.querySelector("#consolidado-kpis").innerHTML = items.map(([label, value, note, tooltip]) => `
+    <article class="kpi">
+      <span>${label}<span class="info-tip kpi-tip" tabindex="0" aria-label="Ajuda: ${tooltip}" data-tooltip="${tooltip}">?</span></span>
+      <strong>${value}</strong>
+      <small>${note}</small>
+    </article>
+  `).join("");
+}
+
+function renderConsolidadoHeatmap(records) {
+  const initial = consolidadoLevelStats(records, "initial");
+  const fin = consolidadoLevelStats(records, "final");
+  const chartLevels = [...SANKEY_LEVELS, "sem"];
+
+  const renderPeriod = (title, stats) => `
+    <div class="heatmap-period">
+      <p class="mini-title">${title}</p>
+      <table>
+        <thead>
+          <tr><th>Hipótese</th><th>Alunos</th><th>%</th></tr>
+        </thead>
+        <tbody>
+          ${chartLevels.map((level) => {
+            const count = stats.counts[level] ?? 0;
+            const pct = stats.pct[level] ?? 0;
+            const color = LEVEL_COLORS[level] || "#8a94a6";
+            const label = level === "sem" ? "Sem dado" : level;
+            return `
+              <tr>
+                <th>
+                  <span class="level-swatch" style="background:${color}"></span>
+                  ${label}
+                </th>
+                <td>
+                  <div class="heat-cell" style="background:${color}; opacity:${0.22 + pct * 0.68}">
+                    ${formatNumber(count)}
+                  </div>
+                </td>
+                <td><strong>${formatPct(pct)}</strong></td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  document.querySelector("#consolidado-heatmap").innerHTML = `
+    ${renderPeriod("Inicial", initial)}
+    ${renderPeriod("1º bimestre", fin)}
+  `;
+}
+
+function renderConsolidadoDreChart(records) {
+  const panel = document.querySelector("#consolidado-dre-panel");
+  panel.hidden = state.selectedDre !== "__all__" || state.selectedSchool !== "__all__";
+  if (panel.hidden) return;
+
+  const field = state.consolidadoDrePeriod === "initial" ? "initial" : "final";
+  const grouped = new Map();
+  records.forEach((r) => {
+    if (!r.dre) return;
+    if (!grouped.has(r.dre)) grouped.set(r.dre, []);
+    grouped.get(r.dre).push(r);
+  });
+
+  const chartLevels = [...LEVELS, "sem"];
+  const dreData = Array.from(grouped.entries())
+    .map(([dre, recs]) => ({ dre, stats: consolidadoLevelStats(recs, field) }))
+    .sort((a, b) => b.stats.pct.A - a.stats.pct.A);
+
+  if (!dreData.length) {
+    document.querySelector("#consolidado-dre-chart").innerHTML = `<p class="empty-state">Nenhum dado disponível.</p>`;
+    return;
+  }
+
+  const rows = dreData.map(({ dre, stats }) => {
+    const bars = chartLevels.map((level) => {
+      const pct = stats.pct[level] ?? 0;
+      const color = LEVEL_COLORS[level] || "#8a94a6";
+      const label = level === "sem" ? "Sem dado" : level;
+      const inner = pct >= 0.03 ? `<span class="dre-seg-label">${formatPct(pct)}</span>` : "";
+      return `<div class="dre-bar-seg" style="width:${pct * 100}%; background:${color}" title="${label}: ${formatPct(pct)} (${formatNumber(stats.counts[level])})">${inner}</div>`;
+    }).join("");
+    return `
+      <div class="dre-bar-row">
+        <span class="dre-bar-label">${escapeHtml(dre)}</span>
+        <div class="dre-bar-track">${bars}</div>
+      </div>
+    `;
+  }).join("");
+
+  const legend = chartLevels.map((level) => {
+    const color = LEVEL_COLORS[level] || "#8a94a6";
+    const label = level === "sem" ? "Sem dado" : level;
+    return `<span class="legend-item"><span class="legend-swatch" style="background:${color}"></span>${label}</span>`;
+  }).join("");
+
+  document.querySelector("#consolidado-dre-chart").innerHTML = `
+    <div class="dre-chart-legend">${legend}</div>
+    <div class="dre-chart-rows">${rows}</div>
+  `;
+}
+
+function renderConsolidadoSchoolTable(records) {
+  const field = state.consolidadoSchoolPeriod === "initial" ? "initial" : "final";
+  const sortBy = state.consolidadoSchoolSortBy;
+  const dir = state.consolidadoSchoolSortDir === "asc" ? 1 : -1;
+
+  const grouped = new Map();
+  records.forEach((r) => {
+    if (!r.schoolCode) return;
+    if (!grouped.has(r.schoolCode)) {
+      grouped.set(r.schoolCode, { schoolCode: r.schoolCode, school: r.school, recs: [] });
+    }
+    grouped.get(r.schoolCode).recs.push(r);
+  });
+
+  const schools = Array.from(grouped.values())
+    .map((g) => ({ ...g, stats: consolidadoLevelStats(g.recs, field) }))
+    .sort((a, b) => {
+      if (sortBy === "school") return dir * a.school.localeCompare(b.school, "pt-BR");
+      if (sortBy === "total") return dir * (a.stats.total - b.stats.total);
+      const aVal = sortBy === "sem" ? a.stats.pct.sem : (a.stats.pct[sortBy] ?? 0);
+      const bVal = sortBy === "sem" ? b.stats.pct.sem : (b.stats.pct[sortBy] ?? 0);
+      return dir * (aVal - bVal);
+    });
+
+  const chartLevels = [...LEVELS, "sem"];
+  const rows = schools.map((s) => {
+    const selected = state.selectedSchool === s.schoolCode;
+    const cells = chartLevels.map((level) => {
+      const count = s.stats.counts[level] ?? 0;
+      const pct = s.stats.pct[level] ?? 0;
+      return `<td>${formatPct(pct)} <small>${formatNumber(count)}</small></td>`;
+    }).join("");
+    return `<tr class="clickable-row ${selected ? "selected-row" : ""}" data-school-code="${escapeHtml(s.schoolCode)}" title="Filtrar ${escapeHtml(s.school)}">
+      <td class="school-name">${escapeHtml(s.school)}</td>
+      <td>${formatNumber(s.stats.total)}</td>
+      ${cells}
+    </tr>`;
+  }).join("");
+
+  document.querySelector("#consolidado-school-table tbody").innerHTML = rows || `
+    <tr><td colspan="9" class="empty-table">Nenhuma escola encontrada para o recorte atual.</td></tr>
+  `;
+}
+
+function renderConsolidadoDesempenho(records) {
+  const field = state.consolidadoChartPeriod === "initial" ? "initial" : "final";
+  const stats = consolidadoLevelStats(records, field);
+  const chartLevels = [...SANKEY_LEVELS, "sem"];
+
+  const maxRaw = Math.max(0.05, ...chartLevels.map((l) => stats.pct[l] ?? 0));
+  const maxPct = Math.ceil(maxRaw * 10) / 10;
+  const tickStep = maxPct <= 0.3 ? 0.05 : 0.1;
+  const ticks = [];
+  for (let t = 0; t <= maxPct + 0.001; t += tickStep) ticks.push(Math.round(t * 1000) / 1000);
+
+  const labelW = 88;
+  const rightPad = 58;
+  const barAreaW = 360;
+  const barH = 24;
+  const barGap = 11;
+  const topPad = 14;
+  const bottomPad = 30;
+  const n = chartLevels.length;
+  const chartInnerH = n * barH + (n - 1) * barGap;
+  const SVG_W = labelW + barAreaW + rightPad;
+  const SVG_H = topPad + chartInnerH + bottomPad;
+
+  const gridLines = ticks.map((tick) => {
+    const x = labelW + (tick / maxPct) * barAreaW;
+    return `
+      <line class="grid-line" x1="${x}" y1="${topPad}" x2="${x}" y2="${topPad + chartInnerH}"></line>
+      <text class="tick-label" x="${x}" y="${SVG_H - 6}" text-anchor="middle">${formatPct(tick)}</text>
+    `;
+  }).join("");
+
+  const bars = chartLevels.map((level, i) => {
+    const pct = stats.pct[level] ?? 0;
+    const w = Math.max(0, (pct / maxPct) * barAreaW);
+    const y = topPad + i * (barH + barGap);
+    const color = LEVEL_COLORS[level] || "#8a94a6";
+    const label = level === "sem" ? "Sem dado" : level;
+    return `
+      <text class="tick-label" x="${labelW - 8}" y="${y + barH * 0.67}" text-anchor="end">${label}</text>
+      <rect x="${labelW}" y="${y}" width="${w}" height="${barH}" fill="${color}" rx="3" opacity="0.88"></rect>
+      <text class="tick-label" x="${labelW + w + 6}" y="${y + barH * 0.67}" font-weight="750">${formatPct(pct)}</text>
+    `;
+  }).join("");
+
+  document.querySelector("#consolidado-desempenho").innerHTML = `
+    <svg viewBox="0 0 ${SVG_W} ${SVG_H}" preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto">
+      ${gridLines}${bars}
+    </svg>
+  `;
+}
+
+function renderConsolidadoParticipacao(records) {
+  const field = state.consolidadoChartPeriod === "initial" ? "initial" : "final";
+  const stats = consolidadoLevelStats(records, field);
+  const semPct = stats.pct.sem;
+  const preenchidoPct = 1 - semPct;
+
+  const leftPad = 70;
+  const rightPad = 60;
+  const barW = 80;
+  const spacing = 220;
+  const chartH = 200;
+  const topPad = 28;
+  const bottomPad = 36;
+  const SVG_W = leftPad + barW * 2 + spacing + rightPad;
+  const SVG_H = topPad + chartH + bottomPad;
+
+  const yTicks = [0, 0.2, 0.4, 0.6, 0.8, 1.0];
+  const gridLines = yTicks.map((tick) => {
+    const y = topPad + (1 - tick) * chartH;
+    return `
+      <line class="grid-line" x1="${leftPad}" y1="${y}" x2="${SVG_W - rightPad}" y2="${y}"></line>
+      <text class="tick-label" x="${leftPad - 6}" y="${y + 4}" text-anchor="end">${formatPct(tick)}</text>
+    `;
+  }).join("");
+
+  const renderBar = (x, pct, label, opacity) => {
+    const h = Math.max(pct * chartH, 2);
+    const barY = topPad + chartH - h;
+    return `
+      <rect x="${x}" y="${barY}" width="${barW}" height="${h}" fill="#1f6feb" opacity="${opacity}" rx="4"></rect>
+      <text class="tick-label" x="${x + barW / 2}" y="${Math.min(barY - 7, topPad + chartH - h - 4)}" text-anchor="middle" font-weight="800">${formatPct(pct)}</text>
+      <text class="tick-label" x="${x + barW / 2}" y="${topPad + chartH + 18}" text-anchor="middle">${label}</text>
+    `;
+  };
+
+  document.querySelector("#consolidado-participacao").innerHTML = `
+    <svg viewBox="0 0 ${SVG_W} ${SVG_H}" preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto">
+      ${gridLines}
+      <line class="axis-line" x1="${leftPad}" y1="${topPad}" x2="${leftPad}" y2="${topPad + chartH}"></line>
+      ${renderBar(leftPad, preenchidoPct, "Preenchido", 1)}
+      ${renderBar(leftPad + barW + spacing, semPct, "Sem dado", 0.3)}
+    </svg>
+  `;
+}
+
+function renderConsolidado() {
+  const records = filterRecords(state.records, { includeMissing: true });
+  const compRecords = filterRecords(state.records, { includeMissing: true, includeSchool: false });
+  renderFilterSummary(records);
+  renderConsolidadoKpis(records);
+  renderConsolidadoDesempenho(records);
+  renderConsolidadoParticipacao(records);
+  renderConsolidadoHeatmap(records);
+  renderConsolidadoDreChart(compRecords);
+  renderConsolidadoSchoolTable(compRecords);
+}
+
 function renderScatter(records) {
   const stats = schoolStats(records);
   const width = 1000;
@@ -683,10 +966,8 @@ function renderClassesTable(records) {
 }
 
 function renderStudents(records) {
-  const term = state.search.trim().toLocaleLowerCase("pt-BR");
   const focus = records
     .filter((record) => record.gain <= 0 || record.gain >= 2)
-    .filter((record) => !term || `${record.name} ${record.school}`.toLocaleLowerCase("pt-BR").includes(term))
     .sort(sortStudents)
     .slice(0, 220);
 
@@ -948,6 +1229,14 @@ function populateSchoolFilter() {
 }
 
 function render() {
+  document.querySelector("#view-evolucao").hidden = state.viewMode !== "evolucao";
+  document.querySelector("#view-consolidado").hidden = state.viewMode !== "consolidado";
+
+  if (state.viewMode === "consolidado") {
+    renderConsolidado();
+    return;
+  }
+
   const records = filterRecords(state.records);
   const recordsInScope = filterRecords(state.records, { includeMissing: true });
   const comparisonRecords = filterRecords(state.records, { includeSchool: false });
@@ -1027,10 +1316,6 @@ async function init() {
     document.querySelector("#schoolFilter").value = state.selectedSchool;
     render();
   });
-  document.querySelector("#studentSearch").addEventListener("input", (event) => {
-    state.search = event.target.value;
-    renderStudents(filterRecords(state.records));
-  });
   document.querySelector("#studentSortBy").addEventListener("change", (event) => {
     state.studentSortBy = event.target.value;
     renderStudents(filterRecords(state.records));
@@ -1088,6 +1373,61 @@ async function init() {
     renderClassroomTabs();
   });
 
+  document.querySelector("#switchEvolucao").addEventListener("click", () => {
+    if (state.viewMode === "evolucao") return;
+    state.viewMode = "evolucao";
+    document.querySelector("#switchEvolucao").classList.add("active");
+    document.querySelector("#switchConsolidado").classList.remove("active");
+    render();
+  });
+  document.querySelector("#switchConsolidado").addEventListener("click", () => {
+    if (state.viewMode === "consolidado") return;
+    state.viewMode = "consolidado";
+    document.querySelector("#switchConsolidado").classList.add("active");
+    document.querySelector("#switchEvolucao").classList.remove("active");
+    render();
+  });
+  document.querySelector("#consolidadoChartPeriod").addEventListener("change", (e) => {
+    state.consolidadoChartPeriod = e.target.value;
+    if (state.viewMode === "consolidado") {
+      const records = filterRecords(state.records, { includeMissing: true });
+      renderConsolidadoDesempenho(records);
+      renderConsolidadoParticipacao(records);
+    }
+  });
+  document.querySelector("#consolidadoDrePeriod").addEventListener("change", (e) => {
+    state.consolidadoDrePeriod = e.target.value;
+    if (state.viewMode === "consolidado") {
+      renderConsolidadoDreChart(filterRecords(state.records, { includeMissing: true, includeSchool: false }));
+    }
+  });
+  document.querySelector("#consolidadoSchoolSortBy").addEventListener("change", (e) => {
+    state.consolidadoSchoolSortBy = e.target.value;
+    if (state.viewMode === "consolidado") {
+      renderConsolidadoSchoolTable(filterRecords(state.records, { includeMissing: true, includeSchool: false }));
+    }
+  });
+  document.querySelector("#consolidadoSchoolSortDir").addEventListener("change", (e) => {
+    state.consolidadoSchoolSortDir = e.target.value;
+    if (state.viewMode === "consolidado") {
+      renderConsolidadoSchoolTable(filterRecords(state.records, { includeMissing: true, includeSchool: false }));
+    }
+  });
+  document.querySelector("#consolidadoSchoolPeriod").addEventListener("change", (e) => {
+    state.consolidadoSchoolPeriod = e.target.value;
+    if (state.viewMode === "consolidado") {
+      renderConsolidadoSchoolTable(filterRecords(state.records, { includeMissing: true, includeSchool: false }));
+    }
+  });
+  document.querySelector("#consolidado-school-table tbody").addEventListener("click", (e) => {
+    const row = e.target.closest("[data-school-code]");
+    if (!row) return;
+    state.selectedSchool = row.dataset.schoolCode;
+    syncDreForSchool(state.selectedSchool);
+    document.querySelector("#schoolFilter").value = state.selectedSchool;
+    render();
+  });
+
   const appLayout = document.querySelector(".app-layout");
   const sidebarToggle = document.querySelector("#sidebarToggle");
   sidebarToggle.addEventListener("click", () => {
@@ -1115,7 +1455,76 @@ async function init() {
     document.addEventListener("mouseup", onUp);
   });
 
+  document.querySelectorAll(".table-dl-btn").forEach((btn) => {
+    btn.addEventListener("click", () => exportTableXlsx(btn.dataset.table, btn.dataset.filename, btn.dataset.skipCol));
+  });
+
+  const copyIcon = `<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="9" height="9" rx="1.5"/><path d="M5 3.5A1.5 1.5 0 0 1 6.5 2H13a1.5 1.5 0 0 1 1.5 1.5v6.5A1.5 1.5 0 0 1 13 11.5"/></svg>`;
+  const copiedIcon = `<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8.5l3.5 3.5 7-7"/></svg>`;
+  document.querySelectorAll("article.panel").forEach((panel) => {
+    if (panel.querySelector(".table-wrap")) return;
+    const head = panel.querySelector(".panel-head");
+    if (!head) return;
+    const btn = document.createElement("button");
+    btn.className = "card-copy-btn";
+    btn.type = "button";
+    btn.title = "Copiar como imagem";
+    btn.innerHTML = copyIcon;
+    btn.addEventListener("click", async () => {
+      if (typeof html2canvas === "undefined") { alert("Biblioteca de captura não disponível."); return; }
+      btn.classList.add("copying");
+      btn.disabled = true;
+      try {
+        const canvas = await html2canvas(panel, { scale: 2, useCORS: true, logging: false, backgroundColor: "#ffffff" });
+        canvas.toBlob(async (blob) => {
+          try {
+            await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+          } catch {
+            const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "grafico.png" });
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+          }
+          btn.innerHTML = copiedIcon;
+          btn.classList.add("copied");
+          setTimeout(() => { btn.innerHTML = copyIcon; btn.classList.remove("copied"); }, 2000);
+        }, "image/png");
+      } catch (err) {
+        console.error("Erro ao capturar gráfico:", err);
+      } finally {
+        btn.classList.remove("copying");
+        btn.disabled = false;
+      }
+    });
+    head.appendChild(btn);
+  });
+
   render();
+}
+
+function exportTableXlsx(tableId, filename, skipColStr) {
+  if (typeof XLSX === "undefined") {
+    alert("Biblioteca de exportação não disponível.");
+    return;
+  }
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const skipCol = skipColStr !== undefined ? parseInt(skipColStr, 10) : -1;
+  if (skipCol < 0) {
+    const wb = XLSX.utils.table_to_book(table, { sheet: "Dados" });
+    XLSX.writeFile(wb, filename + ".xlsx");
+    return;
+  }
+  const rows = [];
+  table.querySelectorAll("tr").forEach((tr) => {
+    const cells = [...tr.querySelectorAll("th, td")]
+      .filter((_, i) => i !== skipCol)
+      .map((cell) => cell.innerText.trim());
+    rows.push(cells);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Dados");
+  XLSX.writeFile(wb, filename + ".xlsx");
 }
 
 init().catch((error) => {
