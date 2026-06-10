@@ -57,6 +57,54 @@
           <div id="sankey" class="sankey" role="img" aria-label="Fluxo de evolução entre níveis de escrita"></div>
         </article>
 
+        <article id="dreRankingPanel" class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Ranking</p>
+              <h2>DREs por Índice de Evolução <span class="info-tip" tabindex="0" aria-label="Ajuda: ordena DREs pelo ganho médio de níveis entre a avaliação inicial e o 1º bimestre. Usa as mesmas métricas do ranking de escolas e aparece apenas quando Todas as DREs está selecionado." data-tooltip="Ordena DREs pelo ganho médio de níveis. Usa as mesmas métricas do ranking de escolas e aparece apenas quando Todas as DREs está selecionado.">?</span></h2>
+            </div>
+            <div class="ranking-controls">
+              <label>
+                Ordenar por
+                <select id="dreRankingSortBy">
+                  <option value="avgGain">Índice de Evolução</option>
+                  <option value="finalAlphaPct">Alfabéticos (1ºBI)</option>
+                  <option value="alphaDeltaPct">Alfabéticos (diferença)</option>
+                  <option value="improvedPct">Melhoraram</option>
+                  <option value="stablePct">Mantiveram</option>
+                  <option value="regressedPct">Baixaram</option>
+                  <option value="total">Alunos</option>
+                  <option value="school">DRE</option>
+                </select>
+              </label>
+              <label>
+                Direção
+                <select id="dreRankingSortDir">
+                  <option value="desc">DESC</option>
+                  <option value="asc">ASC</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table id="dreRankingTable">
+              <thead>
+                <tr>
+                  <th>DRE</th>
+                  <th>Alunos</th>
+                  <th>Alfabéticos (1ºBI)</th>
+                  <th>Alfabéticos (diferença)</th>
+                  <th>Melhoraram</th>
+                  <th>Mantiveram</th>
+                  <th>Baixaram</th>
+                  <th>Índice de Evolução</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+
         <article class="panel">
           <div class="panel-head">
             <div>
@@ -178,6 +226,29 @@
             <p class="eyebrow">Turmas</p>
             <h2>Turmas do recorte <span class="info-tip" tabindex="0" aria-label="Ajuda: lista as turmas conforme os filtros atuais, com totais, pares válidos, alfabéticos no 1º bimestre e evolução. O botão de visualização abre a sala da turma." data-tooltip="Lista turmas no recorte atual, com totais, pares válidos, alfabéticos no 1º bimestre e evolução. O botão abre a visualização da sala.">?</span></h2>
           </div>
+          <div class="ranking-controls">
+            <label>
+              Ordenar por
+              <select id="classesSortBy">
+                <option value="school">Escola</option>
+                <option value="className">Turma</option>
+                <option value="avgGain">Índice de Evolução</option>
+                <option value="finalAlphaPct">Alfabéticos (1ºBI)</option>
+                <option value="improvedPct">Melhoraram</option>
+                <option value="stablePct">Mantiveram</option>
+                <option value="regressedPct">Baixaram</option>
+                <option value="pairedCount">Par válido</option>
+                <option value="total">Alunos</option>
+              </select>
+            </label>
+            <label>
+              Direção
+              <select id="classesSortDir">
+                <option value="asc">ASC</option>
+                <option value="desc">DESC</option>
+              </select>
+            </label>
+          </div>
         </div>
         <div class="table-wrap">
           <table id="classesTable">
@@ -219,7 +290,28 @@
             <p class="eyebrow">Acompanhamento</p>
             <h2>Alunos que pedem atenção <span class="info-tip" tabindex="0" aria-label="Ajuda: lista alunos com baixa, estabilidade ou alta evolução, priorizando casos para acompanhamento pedagógico. Usa o ganho entre a hipótese inicial e a do 1º bimestre." data-tooltip="Lista alunos com baixa, estabilidade ou alta evolução, priorizando casos para acompanhamento pedagógico. Usa o ganho Inicial -> 1º bimestre.">?</span></h2>
           </div>
-          <input id="studentSearch" type="search" placeholder="Buscar aluno ou escola">
+          <div class="student-controls">
+            <label>
+              Ordenar por
+              <select id="studentSortBy">
+                <option value="gain">Ganho</option>
+                <option value="name">Aluno</option>
+                <option value="school">Escola</option>
+                <option value="className">Turma</option>
+                <option value="initial">Inicial</option>
+                <option value="final">1º bimestre</option>
+                <option value="status">Situação</option>
+              </select>
+            </label>
+            <label>
+              Direção
+              <select id="studentSortDir">
+                <option value="asc">ASC</option>
+                <option value="desc">DESC</option>
+              </select>
+            </label>
+            <input id="studentSearch" type="search" placeholder="Buscar aluno ou escola">
+          </div>
         </div>
         <div class="table-wrap">
           <table id="studentsTable">

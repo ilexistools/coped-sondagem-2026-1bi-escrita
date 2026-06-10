@@ -2,6 +2,24 @@
 Lê sondagem_Língua_Portuguesa_2026_06_03_12_59_50_Ensino_Fundamental.xlsx
 (uma guia por DRE) e gera data/lp_sistema_de_escrita.json com os registros
 filtrados por Proficiência = "Escrita" e Questão = "Sistema de escrita".
+
+O JSON é salvo em formato compacto:
+
+{
+  "schema": ["d", "ec", "e", "t", "id", "n", "r", "a", "b"],
+  "rows": [...]
+}
+
+Campos:
+- d: Nome DRE
+- ec: Código EOL Escola
+- e: Nome Escola
+- t: Nome Turma
+- id: Código EOL Estudante
+- n: Nome Estudante
+- r: Resposta
+- a: Ano
+- b: Bimestre
 """
 
 import json
@@ -17,6 +35,18 @@ SAIDA = os.path.join(os.path.dirname(__file__), "data", "lp_sistema_de_escrita.j
 
 FILTRO_PROFICIENCIA = "Escrita"
 FILTRO_QUESTAO = "Sistema de escrita"
+SCHEMA = ["d", "ec", "e", "t", "id", "n", "r", "a", "b"]
+COLUNAS_SAIDA = [
+    "Nome DRE",
+    "Código EOL Escola",
+    "Nome Escola",
+    "Nome Turma",
+    "Código EOL Estudante",
+    "Nome Estudante",
+    "Resposta",
+    "Ano",
+    "Bimestre",
+]
 
 # Mapeamento: nome da guia -> (sigla, nome curto)
 DRES = {
@@ -56,11 +86,18 @@ def main():
         filtrado["Sigla DRE"] = sigla
         filtrado["Nome DRE"] = nome_curto
 
-        registros.extend(filtrado.to_dict(orient="records"))
+        saida = filtrado[COLUNAS_SAIDA].astype(object)
+        saida = saida.where(saida.notna(), None)
+        registros.extend(saida.values.tolist())
         print(f"  [{sigla}] {nome_curto}: {len(filtrado)} registros")
 
     with open(SAIDA, "w", encoding="utf-8") as f:
-        json.dump(registros, f, ensure_ascii=False, indent=2)
+        json.dump(
+            {"schema": SCHEMA, "rows": registros},
+            f,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
 
     print(f"\nTotal: {len(registros)} registros -> {SAIDA}")
 

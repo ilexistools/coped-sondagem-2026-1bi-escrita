@@ -393,6 +393,10 @@ main {
   box-shadow: var(--shadow);
 }
 
+.panel[hidden] {
+  display: none;
+}
+
 .panel-head {
   display: flex;
   justify-content: space-between;
@@ -696,7 +700,8 @@ tbody tr:hover {
 }
 
 .scatter-controls,
-.ranking-controls {
+.ranking-controls,
+.student-controls {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -704,13 +709,20 @@ tbody tr:hover {
 }
 
 .scatter-controls select,
-.ranking-controls select {
+.ranking-controls select,
+.student-controls select {
   min-width: 138px;
   height: 34px;
 }
 
-.ranking-controls select {
+.ranking-controls select,
+.student-controls select {
   min-width: 160px;
+}
+
+.student-controls input {
+  min-width: 220px;
+  height: 34px;
 }
 
 .axis-line {

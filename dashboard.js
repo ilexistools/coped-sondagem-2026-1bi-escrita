@@ -15,6 +15,17 @@ const STATUS_COLORS = {
   "Estável": "#b36b00",
   "Baixa": "#c43d3d",
 };
+const COMPACT_SCHEMA = {
+  dre: 0,
+  schoolCode: 1,
+  school: 2,
+  className: 3,
+  studentId: 4,
+  studentName: 5,
+  response: 6,
+  ano: 7,
+  bimestre: 8,
+};
 
 const state = {
   records: [],
@@ -26,8 +37,14 @@ const state = {
   selectedAno: "__all__",
   scatterXLevel: "PS",
   scatterYLevel: "A",
+  dreRankingSortBy: "avgGain",
+  dreRankingSortDir: "desc",
   rankingSortBy: "avgGain",
   rankingSortDir: "desc",
+  classesSortBy: "school",
+  classesSortDir: "asc",
+  studentSortBy: "gain",
+  studentSortDir: "asc",
   search: "",
   classroomTabs: [],
   activeClassroomTabId: null,
@@ -46,7 +63,8 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => 
 }[char]));
 
 function parseJsonRows(text) {
-  return JSON.parse(text.replace(/:\s*NaN(?=\s*[,}])/g, ": null"));
+  const payload = JSON.parse(text.replace(/\bNaN\b/g, "null"));
+  return payload.rows || payload;
 }
 
 function parseTSV(text) {
@@ -72,27 +90,58 @@ function classifyGain(gain) {
   return "Baixa";
 }
 
+function readSourceRow(row) {
+  if (Array.isArray(row)) {
+    return {
+      question: "Sistema de escrita",
+      studentId: row[COMPACT_SCHEMA.studentId],
+      response: row[COMPACT_SCHEMA.response],
+      bimestre: row[COMPACT_SCHEMA.bimestre],
+      studentName: row[COMPACT_SCHEMA.studentName],
+      schoolCode: row[COMPACT_SCHEMA.schoolCode],
+      school: row[COMPACT_SCHEMA.school],
+      dre: row[COMPACT_SCHEMA.dre],
+      ano: row[COMPACT_SCHEMA.ano],
+      className: row[COMPACT_SCHEMA.className],
+    };
+  }
+
+  return {
+    question: row["Questão"],
+    studentId: row["Código EOL Estudante"],
+    response: row["Resposta"],
+    bimestre: row["Bimestre"],
+    studentName: row["Nome Estudante"],
+    schoolCode: row["Código EOL Escola"],
+    school: row["Nome Escola"],
+    dre: row["Nome DRE"],
+    ano: row["Ano"],
+    className: row["Nome Turma"],
+  };
+}
+
 function buildStudentRecords(rows) {
   const byStudent = new Map();
   const invalid = { initial: 0, final: 0 };
 
   rows.forEach((row) => {
-    if (row["Questão"] !== "Sistema de escrita") return;
-    const studentId = row["Código EOL Estudante"];
+    const source = readSourceRow(row);
+    if (source.question && source.question !== "Sistema de escrita") return;
+    const studentId = source.studentId;
     if (!studentId) return;
-    const level = normalizeLevel(row["Resposta"]);
-    const period = row["Bimestre"] === "Inicial" ? "initial" : row["Bimestre"] === "1° bimestre" ? "final" : null;
+    const level = normalizeLevel(source.response);
+    const period = source.bimestre === "Inicial" ? "initial" : source.bimestre === "1° bimestre" ? "final" : null;
     if (!period) return;
 
     if (!byStudent.has(studentId)) {
       byStudent.set(studentId, {
         id: studentId,
-        name: row["Nome Estudante"],
-        schoolCode: row["Código EOL Escola"],
-        school: row["Nome Escola"],
-        dre: row["Nome DRE"],
-        ano: row["Ano"],
-        className: row["Nome Turma"],
+        name: source.studentName,
+        schoolCode: source.schoolCode,
+        school: source.school,
+        dre: source.dre,
+        ano: source.ano,
+        className: source.className,
         initial: null,
         final: null,
       });
@@ -101,9 +150,9 @@ function buildStudentRecords(rows) {
     const record = byStudent.get(studentId);
     if (level) {
       record[period] = level;
-      record.school = row["Nome Escola"] || record.school;
-      record.schoolCode = row["Código EOL Escola"] || record.schoolCode;
-      record.className = row["Nome Turma"] || record.className;
+      record.school = source.school || record.school;
+      record.schoolCode = source.schoolCode || record.schoolCode;
+      record.className = source.className || record.className;
     } else {
       invalid[period] += 1;
     }
@@ -181,6 +230,44 @@ function schoolStats(records) {
       alphaDeltaPct: summary.finalAlpha - summary.initialAlpha,
     };
   }).sort((a, b) => b.avgGain - a.avgGain || b.improvedPct - a.improvedPct);
+}
+
+function groupedStats(records, getKey, getName) {
+  const grouped = new Map();
+  records.filter((record) => record.hasPair).forEach((record) => {
+    const key = getKey(record);
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        code: key,
+        name: getName(record),
+        records: [],
+      });
+    }
+    grouped.get(key).records.push(record);
+  });
+
+  return Array.from(grouped.values()).map((group) => {
+    const summary = summarize(group.records);
+    const finalAlphaCount = summary.paired.filter((record) => record.final === "A").length;
+    const initialAlphaCount = summary.paired.filter((record) => record.initial === "A").length;
+    return {
+      ...group,
+      total: summary.total,
+      improvedPct: summary.improved / summary.total,
+      stablePct: summary.stable / summary.total,
+      regressedPct: summary.regressed / summary.total,
+      avgGain: summary.avgGain,
+      finalAlphaCount,
+      initialAlphaCount,
+      finalAlphaPct: summary.finalAlpha,
+      alphaDeltaCount: finalAlphaCount - initialAlphaCount,
+      alphaDeltaPct: summary.finalAlpha - summary.initialAlpha,
+    };
+  });
+}
+
+function dreStats(records) {
+  return groupedStats(records, (record) => record.dre, (record) => record.dre);
 }
 
 function countByLevel(records, field) {
@@ -324,16 +411,11 @@ function renderHeatmap(records) {
 }
 
 function renderRanking(records) {
-  const stats = [...schoolStats(records)].sort((a, b) => {
-    const direction = state.rankingSortDir === "asc" ? 1 : -1;
-    const key = state.rankingSortBy;
-    const aValue = a[key];
-    const bValue = b[key];
-    if (typeof aValue === "string" || typeof bValue === "string") {
-      return direction * String(aValue).localeCompare(String(bValue), "pt-BR");
-    }
-    return direction * ((aValue || 0) - (bValue || 0));
-  });
+  const stats = sortRankingStats(
+    schoolStats(records).map((school) => ({ ...school, name: school.school })),
+    state.rankingSortBy,
+    state.rankingSortDir
+  );
   const rows = stats.map((school) => `
     <tr class="clickable-row ${state.selectedSchool === school.code ? "selected-row" : ""}" data-school-code="${escapeHtml(school.code)}" title="Filtrar ${escapeHtml(school.school)}">
       <td class="school-name">${escapeHtml(school.school)}</td>
@@ -347,6 +429,40 @@ function renderRanking(records) {
     </tr>
   `).join("");
   document.querySelector("#rankingTable tbody").innerHTML = rows;
+}
+
+function sortRankingStats(stats, sortBy, sortDir) {
+  return [...stats].sort((a, b) => {
+    const direction = sortDir === "asc" ? 1 : -1;
+    const key = sortBy;
+    const aValue = key === "school" ? a.name : a[key];
+    const bValue = key === "school" ? b.name : b[key];
+    if (typeof aValue === "string" || typeof bValue === "string") {
+      return direction * String(aValue).localeCompare(String(bValue), "pt-BR");
+    }
+    return direction * ((aValue || 0) - (bValue || 0));
+  });
+}
+
+function renderDreRanking(records) {
+  const panel = document.querySelector("#dreRankingPanel");
+  panel.hidden = state.selectedDre !== "__all__" || state.selectedSchool !== "__all__";
+  if (panel.hidden) return;
+
+  const rows = sortRankingStats(dreStats(records), state.dreRankingSortBy, state.dreRankingSortDir).map((dre) => `
+    <tr class="clickable-row" data-dre="${escapeHtml(dre.code)}" title="Filtrar ${escapeHtml(dre.name)}">
+      <td class="school-name">${escapeHtml(dre.name)}</td>
+      <td>${formatNumber(dre.total)}</td>
+      <td>${formatPct(dre.finalAlphaPct)} <small>${formatNumber(dre.finalAlphaCount)}</small></td>
+      <td>${dre.alphaDeltaPct >= 0 ? "+" : ""}${formatPct(dre.alphaDeltaPct)} <small>${dre.alphaDeltaCount >= 0 ? "+" : ""}${formatNumber(dre.alphaDeltaCount)}</small></td>
+      <td>${formatPct(dre.improvedPct)}</td>
+      <td>${formatPct(dre.stablePct)}</td>
+      <td>${formatPct(dre.regressedPct)}</td>
+      <td><strong>${formatDecimal(dre.avgGain)}</strong></td>
+    </tr>
+  `).join("");
+
+  document.querySelector("#dreRankingTable tbody").innerHTML = rows;
 }
 
 function renderDistribution(records) {
@@ -523,14 +639,23 @@ function classStats(records) {
       regressedPct: regressed / pairedTotal,
       avgGain,
     };
-  }).sort((a, b) =>
-    a.school.localeCompare(b.school, "pt-BR") ||
-    a.className.localeCompare(b.className, "pt-BR", { numeric: true })
-  );
+  });
+}
+
+function sortClassStats(stats, sortBy, sortDir) {
+  return [...stats].sort((a, b) => {
+    const direction = sortDir === "asc" ? 1 : -1;
+    const aValue = sortBy === "school" ? a.school : sortBy === "className" ? a.className : a[sortBy];
+    const bValue = sortBy === "school" ? b.school : sortBy === "className" ? b.className : b[sortBy];
+    if (typeof aValue === "string" || typeof bValue === "string") {
+      return direction * String(aValue).localeCompare(String(bValue), "pt-BR", { numeric: true });
+    }
+    return direction * ((aValue || 0) - (bValue || 0));
+  });
 }
 
 function renderClassesTable(records) {
-  const rows = classStats(records).map((group) => {
+  const rows = sortClassStats(classStats(records), state.classesSortBy, state.classesSortDir).map((group) => {
     const recordRef = {
       schoolCode: group.schoolCode,
       className: group.className,
@@ -562,12 +687,12 @@ function renderStudents(records) {
   const focus = records
     .filter((record) => record.gain <= 0 || record.gain >= 2)
     .filter((record) => !term || `${record.name} ${record.school}`.toLocaleLowerCase("pt-BR").includes(term))
-    .sort((a, b) => a.gain - b.gain || a.school.localeCompare(b.school, "pt-BR") || a.name.localeCompare(b.name, "pt-BR"))
+    .sort(sortStudents)
     .slice(0, 220);
 
   document.querySelector("#studentsTable tbody").innerHTML = focus.map((record) => `
     <tr>
-      <td><strong>${escapeHtml(record.name)}</strong></td>
+      <td><strong>${escapeHtml(getStudentDisplayName(record))}</strong></td>
       <td>${escapeHtml(record.school)}</td>
       <td>
         <button class="class-link" type="button"
@@ -586,6 +711,29 @@ function renderStudents(records) {
   `).join("");
 }
 
+function sortStudents(a, b) {
+  const direction = state.studentSortDir === "asc" ? 1 : -1;
+  const key = state.studentSortBy;
+  const scoreValue = (record, field) => LEVEL_SCORE[record[field]] || 0;
+  const value = (record) => {
+    if (key === "initial" || key === "final") return scoreValue(record, key);
+    if (key === "name") return getStudentDisplayName(record);
+    return record[key];
+  };
+  const aValue = value(a);
+  const bValue = value(b);
+  let result;
+  if (typeof aValue === "string" || typeof bValue === "string") {
+    result = String(aValue ?? "").localeCompare(String(bValue ?? ""), "pt-BR", { numeric: true });
+  } else {
+    result = (aValue ?? 0) - (bValue ?? 0);
+  }
+  return direction * result ||
+    a.school.localeCompare(b.school, "pt-BR") ||
+    a.className.localeCompare(b.className, "pt-BR", { numeric: true }) ||
+    a.name.localeCompare(b.name, "pt-BR");
+}
+
 function getClassroomTabId(schoolCode, className) {
   return `${schoolCode}::${className}`;
 }
@@ -599,6 +747,10 @@ function getClassroomRecords(tab) {
 
 function getFirstName(name) {
   return String(name || "").trim().split(/\s+/)[0] || "Aluno";
+}
+
+function getStudentDisplayName(record) {
+  return `${getFirstName(record.name)} (${record.id})`;
 }
 
 function evolutionMarker(record, period) {
@@ -668,7 +820,7 @@ function renderClassroomView(tab) {
             </div>
             <div class="student-cloud" aria-label="${group.level}: ${formatNumber(count)} alunos">
               ${group.records.map((record) => `
-                <span class="student-marker" style="--student-color:${group.color}" title="${escapeHtml(record.name)} · ${group.level}">
+                <span class="student-marker" style="--student-color:${group.color}" title="${escapeHtml(getStudentDisplayName(record))} · ${group.level}">
                   ${evolutionMarker(record, period)}
                   <span class="student-head"></span>
                   <span class="student-body"></span>
@@ -725,6 +877,16 @@ function renderClassroomTabs() {
 
   const activeTab = state.classroomTabs.find((tab) => tab.id === state.activeClassroomTabId);
   content.innerHTML = activeTab ? renderClassroomView(activeTab) : "";
+}
+
+function syncDreForSchool(schoolCode) {
+  if (schoolCode === "__all__") return;
+  const record = state.records.find((r) => r.schoolCode === schoolCode);
+  if (record && state.selectedDre !== record.dre) {
+    state.selectedDre = record.dre;
+    document.querySelector("#dreFilter").value = state.selectedDre;
+    populateSchoolFilter();
+  }
 }
 
 function getSchoolLabel() {
@@ -795,6 +957,7 @@ function render() {
   renderHeatmap(records);
   renderDistribution(records);
   renderVelocity(records);
+  renderDreRanking(comparisonRecords);
   renderRanking(comparisonRecords);
   renderScatter(comparisonRecords);
   renderClassesTable(recordsInScope);
@@ -821,6 +984,7 @@ async function init() {
   });
   document.querySelector("#schoolFilter").addEventListener("change", (event) => {
     state.selectedSchool = event.target.value;
+    syncDreForSchool(state.selectedSchool);
     render();
   });
   document.querySelector("#scatterXLevel").addEventListener("change", (event) => {
@@ -839,10 +1003,27 @@ async function init() {
     state.rankingSortDir = event.target.value;
     renderRanking(filterRecords(state.records, { includeSchool: false }));
   });
+  document.querySelector("#dreRankingSortBy").addEventListener("change", (event) => {
+    state.dreRankingSortBy = event.target.value;
+    renderDreRanking(filterRecords(state.records, { includeSchool: false }));
+  });
+  document.querySelector("#dreRankingSortDir").addEventListener("change", (event) => {
+    state.dreRankingSortDir = event.target.value;
+    renderDreRanking(filterRecords(state.records, { includeSchool: false }));
+  });
+  document.querySelector("#dreRankingTable tbody").addEventListener("click", (event) => {
+    const row = event.target.closest("[data-dre]");
+    if (!row) return;
+    state.selectedDre = row.dataset.dre;
+    document.querySelector("#dreFilter").value = state.selectedDre;
+    populateSchoolFilter();
+    render();
+  });
   document.querySelector("#rankingTable tbody").addEventListener("click", (event) => {
     const row = event.target.closest("[data-school-code]");
     if (!row) return;
     state.selectedSchool = row.dataset.schoolCode;
+    syncDreForSchool(state.selectedSchool);
     document.querySelector("#schoolFilter").value = state.selectedSchool;
     render();
   });
@@ -850,10 +1031,26 @@ async function init() {
     state.search = event.target.value;
     renderStudents(filterRecords(state.records));
   });
+  document.querySelector("#studentSortBy").addEventListener("change", (event) => {
+    state.studentSortBy = event.target.value;
+    renderStudents(filterRecords(state.records));
+  });
+  document.querySelector("#studentSortDir").addEventListener("change", (event) => {
+    state.studentSortDir = event.target.value;
+    renderStudents(filterRecords(state.records));
+  });
   document.querySelector("#studentsTable tbody").addEventListener("click", (event) => {
     const button = event.target.closest("[data-classroom-open]");
     if (!button) return;
     openClassroomTab(button.dataset.schoolCode, button.dataset.className);
+  });
+  document.querySelector("#classesSortBy").addEventListener("change", (event) => {
+    state.classesSortBy = event.target.value;
+    renderClassesTable(filterRecords(state.records, { includeMissing: true }));
+  });
+  document.querySelector("#classesSortDir").addEventListener("change", (event) => {
+    state.classesSortDir = event.target.value;
+    renderClassesTable(filterRecords(state.records, { includeMissing: true }));
   });
   document.querySelector("#classesTable tbody").addEventListener("click", (event) => {
     const button = event.target.closest("[data-classroom-open]");
