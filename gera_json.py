@@ -1,16 +1,17 @@
 """
 Lê sondagem_Língua_Portuguesa_2026_06_03_12_59_50_Ensino_Fundamental.xlsx
-(uma guia por DRE) e gera data/lp_sistema_de_escrita.json com os registros
-filtrados por Proficiência = "Escrita" e Questão = "Sistema de escrita".
+(uma guia por DRE) e gera data/lp_avaliacoes_escrita.json com os registros
+filtrados para os recortes de escrita usados pelo painel.
 
 O JSON é salvo em formato compacto:
 
 {
-  "schema": ["d", "ec", "e", "t", "id", "n", "r", "a", "b"],
+  "schema": ["av", "d", "ec", "e", "t", "id", "n", "r", "a", "b"],
   "rows": [...]
 }
 
 Campos:
+- av: Tipo de avaliação compactado
 - d: Nome DRE
 - ec: Código EOL Escola
 - e: Nome Escola
@@ -31,11 +32,38 @@ ARQUIVO = os.path.join(
     "extracao",
     "sondagem_Língua_Portuguesa_2026_06_03_12_59_50_Ensino_Fundamental.xlsx",
 )
-SAIDA = os.path.join(os.path.dirname(__file__), "data", "lp_sistema_de_escrita.json")
+SAIDA = os.path.join(os.path.dirname(__file__), "data", "lp_avaliacoes_escrita.json")
+SAIDA_LEGADO = os.path.join(os.path.dirname(__file__), "data", "lp_sistema_de_escrita.json")
 
-FILTRO_PROFICIENCIA = "Escrita"
-FILTRO_QUESTAO = "Sistema de escrita"
-SCHEMA = ["d", "ec", "e", "t", "id", "n", "r", "a", "b"]
+AVALIACOES = [
+    {
+        "id": "se1",
+        "nome": "Sistema de escrita",
+        "proficiência": "Escrita",
+        "questão": "Sistema de escrita",
+        "ano": "1",
+    },
+    {
+        "id": "esc2",
+        "nome": "Escrita",
+        "proficiência": "Escrita",
+        "questão": "Escrita",
+        "ano": "2",
+    },
+    {
+        "id": "pt3",
+        "nome": "Produção de Texto",
+        "proficiência": "Escrita",
+        "questão": "Produção de Texto",
+        "ano": "3",
+    },
+]
+AVALIACOES_POR_FILTRO = {
+    (item["proficiência"], item["questão"], item["ano"]): item
+    for item in AVALIACOES
+}
+SCHEMA = ["av", "d", "ec", "e", "t", "id", "n", "r", "a", "b"]
+SCHEMA_LEGADO = ["d", "ec", "e", "t", "id", "n", "r", "a", "b"]
 COLUNAS_SAIDA = [
     "Nome DRE",
     "Código EOL Escola",
@@ -80,31 +108,40 @@ def main():
         cabecalhos = [str(valor).strip() if valor is not None else "" for valor in next(linhas)]
         indices = {nome: cabecalhos.index(nome) for nome in set(COLUNAS_SAIDA + ["Proficiência", "Questão"])}
         total_guia = 0
+        total_por_avaliacao = {item["id"]: 0 for item in AVALIACOES}
 
         for linha in linhas:
             proficiencia = normalizar_texto(linha[indices["Proficiência"]])
             questao = normalizar_texto(linha[indices["Questão"]])
-            if proficiencia != FILTRO_PROFICIENCIA or questao != FILTRO_QUESTAO:
+            ano = normalizar_texto(linha[indices["Ano"]])
+            avaliacao = AVALIACOES_POR_FILTRO.get((proficiencia, questao, ano))
+            if not avaliacao:
                 continue
 
-            registro = []
+            registro = [avaliacao["id"]]
             for coluna in COLUNAS_SAIDA:
                 if coluna == "Nome DRE":
                     valor = nome_curto
                 else:
                     valor = linha[indices[coluna]]
                 if coluna == "Nome Estudante":
-                    valor = primeiro_nome(valor)
+                    valor = inicial_nome(valor)
                 registro.append(normalizar_saida(valor))
 
             registros.append(registro)
             total_guia += 1
+            total_por_avaliacao[avaliacao["id"]] += 1
 
-        print(f"  [{sigla}] {nome_curto}: {total_guia} registros")
+        detalhe = ", ".join(
+            f"{item['id']}={total_por_avaliacao[item['id']]}"
+            for item in AVALIACOES
+            if total_por_avaliacao[item["id"]]
+        )
+        print(f"  [{sigla}] {nome_curto}: {total_guia} registros ({detalhe})")
 
     with open(SAIDA, "w", encoding="utf-8") as f:
         json.dump(
-            {"schema": SCHEMA, "rows": registros},
+            {"schema": SCHEMA, "avaliacoes": AVALIACOES, "rows": registros},
             f,
             ensure_ascii=False,
             allow_nan=False,
@@ -112,6 +149,18 @@ def main():
         )
 
     print(f"\nTotal: {len(registros)} registros -> {SAIDA}")
+
+    registros_legado = [registro[1:] for registro in registros if registro[0] == "se1"]
+    with open(SAIDA_LEGADO, "w", encoding="utf-8") as f:
+        json.dump(
+            {"schema": SCHEMA_LEGADO, "rows": registros_legado},
+            f,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+        )
+
+    print(f"Legado Sistema de escrita: {len(registros_legado)} registros -> {SAIDA_LEGADO}")
 
 
 def normalizar_texto(valor):
@@ -123,9 +172,9 @@ def normalizar_saida(valor):
     return texto if texto else None
 
 
-def primeiro_nome(nome):
+def inicial_nome(nome):
     texto = str(nome or "").strip()
-    return texto.split()[0] if texto else "Aluno"
+    return texto[:1].upper() if texto else "A"
 
 
 if __name__ == "__main__":

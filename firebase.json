@@ -1,0 +1,23 @@
+{
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      ".firebaserc",
+      ".firebaseignore",
+      "**/.*",
+      "venv/**",
+      "__pycache__/**",
+      "extracao/**",
+      "tsvs/**",
+      "README.md",
+      "**/*.py",
+      "**/*.pyc",
+      "**/*.exe",
+      "**/*.bat",
+      "**/*.cmd",
+      "**/*.xlsx",
+      "**/*.tsv"
+    ]
+  }
+}

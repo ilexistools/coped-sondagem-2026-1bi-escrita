@@ -1418,3 +1418,91 @@ tbody tr:hover {
   pointer-events: none;
   text-shadow: 0 1px 2px rgba(0,0,0,.35);
 }
+
+/* ---- Top progress bar (filter changes) ---- */
+#page-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0%;
+  background: var(--blue);
+  z-index: 10000;
+  opacity: 0;
+  pointer-events: none;
+  border-radius: 0 2px 2px 0;
+}
+
+main {
+  transition: opacity 180ms ease;
+}
+main.is-rendering {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* ---- Loading overlay ---- */
+.app-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  transition: opacity 350ms ease;
+}
+.app-loader.is-done {
+  opacity: 0;
+  pointer-events: none;
+}
+.app-loader__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 40px 48px;
+  background: var(--panel);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  min-width: 260px;
+  max-width: 340px;
+  text-align: center;
+}
+.app-loader__spinner {
+  width: 38px;
+  height: 38px;
+  border: 3px solid var(--line);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: loader-spin 650ms linear infinite;
+}
+@keyframes loader-spin {
+  to { transform: rotate(360deg); }
+}
+.app-loader__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.app-loader__status {
+  margin: 0;
+  font-size: 0.81rem;
+  color: var(--muted);
+  min-height: 1.1em;
+}
+.app-loader__track {
+  width: 100%;
+  height: 5px;
+  background: var(--line);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.app-loader__fill {
+  height: 100%;
+  width: 0%;
+  background: var(--blue);
+  border-radius: 99px;
+  transition: width 180ms ease;
+}

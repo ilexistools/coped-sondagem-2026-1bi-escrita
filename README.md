@@ -1,6 +1,6 @@
 # BI Sondagem de Escrita - 1º Ano
 
-Este projeto contém um MVP de página BI para acompanhar a evolução dos estudantes do 1º ano na avaliação de sistema de escrita, usando os dados da sondagem inicial e do 1º bimestre por escola e por aluno.
+Este projeto contém um MVP de página BI para acompanhar a evolução dos estudantes nas avaliações de escrita da sondagem inicial e do 1º bimestre por escola e por aluno.
 
 ## Arquivos principais
 
@@ -8,7 +8,8 @@ Este projeto contém um MVP de página BI para acompanhar a evolução dos estud
 - `styles.css`: estilos, responsividade e organização visual dos painéis.
 - `dashboard.js`: carregamento do JSON, transformação dos dados, cálculos dos indicadores e renderização dos gráficos/tabelas.
 - `gera_json.py`: script de geração da base compacta a partir da extração original.
-- `data/lp_sistema_de_escrita.json`: base consolidada usada pelo painel.
+- `data/lp_avaliacoes_escrita.json`: base consolidada multiavaliação usada pelo painel.
+- `data/lp_sistema_de_escrita.json`: base legada do recorte Sistema de escrita/1º ano.
 - `vendor/`: bibliotecas locais usadas para exportar tabelas e copiar gráficos como imagem.
 - `tsvs/dre-bt_lp_escrita_1_ano.tsv`: base TSV original de referência do MVP inicial.
 
@@ -30,12 +31,13 @@ http://localhost:8000/
 
 ## Como o MVP foi feito
 
-O arquivo `data/lp_sistema_de_escrita.json` está em formato longo compactado: cada linha representa uma resposta de estudante em um bimestre. Para reduzir tamanho, o JSON usa um cabeçalho `schema` e uma lista `rows`, em vez de repetir nomes longos de campos em cada registro.
+O arquivo `data/lp_avaliacoes_escrita.json` está em formato longo compactado: cada linha representa uma resposta de estudante em um bimestre. Para reduzir tamanho, o JSON usa um cabeçalho `schema` e uma lista `rows`, em vez de repetir nomes longos de campos em cada registro.
 
 Esquema atual:
 
 | Chave | Campo |
 | --- | --- |
+| `av` | Tipo de avaliação |
 | `d` | Nome DRE |
 | `ec` | Código EOL Escola |
 | `e` | Nome Escola |
@@ -46,6 +48,14 @@ Esquema atual:
 | `a` | Ano |
 | `b` | Bimestre |
 
+Tipos de avaliação:
+
+| Código | Proficiência | Questão | Ano |
+| --- | --- | --- | --- |
+| `se1` | Escrita | Sistema de escrita | 1 |
+| `esc2` | Escrita | Escrita | 2 |
+| `pt3` | Escrita | Produção de Texto | 3 |
+
 Para comparar a evolução, o painel agrupa os registros por `id` (`Código EOL Estudante`) e monta um par de valores:
 
 - `Inicial`
@@ -53,9 +63,15 @@ Para comparar a evolução, o painel agrupa os registros por `id` (`Código EOL 
 
 Somente estudantes com hipótese válida nos dois momentos entram nos cálculos de evolução. Respostas vazias, `Sem preenchimento` ou valores fora da escala são tratadas como `Sem dado` e ficam fora da evolução individual, mas permanecem nas visões consolidadas. O painel diferencia ausência na Inicial, ausência no 1º bimestre e ausência de par completo.
 
-O arquivo consolidado contém registros de múltiplas DREs. Para Sistema de Escrita, o painel fixa o recorte em `1º ano` e aplica os filtros de DRE e Escola diretamente na interface. O ranking e o gráfico de comparação entre escolas respeitam o recorte de DRE/1º ano, mas continuam mostrando todas as escolas desse recorte mesmo quando uma escola específica está selecionada, destacando a escola filtrada.
+O arquivo consolidado contém registros de múltiplas DREs e dos três recortes de avaliação. A interface aplica os filtros de DRE, Escola e Tipo de avaliação diretamente na página. Ao selecionar o tipo de avaliação, o painel atualiza automaticamente o Ano avaliado:
 
-Para reduzir exposição de dados pessoais, o JSON público não armazena o nome completo do estudante. O script `gera_json.py` grava apenas o primeiro nome no campo `n`; a interface combina esse primeiro nome ao código EOL do estudante no formato `PrimeiroNome (CódigoEOL)`.
+- Sistema de escrita: 1º ano.
+- Escrita: 2º ano.
+- Produção de Texto: 3º ano.
+
+O ranking e o gráfico de comparação entre escolas respeitam o recorte de DRE/tipo/ano, mas continuam mostrando todas as escolas desse recorte mesmo quando uma escola específica está selecionada, destacando a escola filtrada.
+
+Para reduzir exposição de dados pessoais, o JSON público não armazena o nome completo nem o primeiro nome do estudante. O script `gera_json.py` grava apenas a inicial do nome no campo `n`; a interface combina essa inicial ao código EOL do estudante no formato `InicialCódigoEOL`, por exemplo `A7940534`.
 
 Também foi aplicada normalização simples em respostas com pequenas variações:
 
@@ -114,14 +130,14 @@ Cards no topo consolidam a situação geral da DRE, ano ou escola selecionada.
 
 ### Visão consolidada
 
-A chave `Consolidado` mantém todos os alunos do recorte, inclusive estudantes sem dado válido em um dos períodos. Essa visão é indicada para ler a escola, a DRE ou a rede no recorte fixo de 1º ano, sem restringir a análise apenas aos alunos com par válido.
+A chave `Consolidado` mantém todos os alunos do recorte, inclusive estudantes sem dado válido em um dos períodos. Essa visão é indicada para ler a escola, a DRE ou a rede no tipo de avaliação selecionado, sem restringir a análise apenas aos alunos com par válido.
 
-A barra de filtros exibe `Ano avaliado: 1º ano` como informação de escopo, sem seletor, pois os dados de Sistema de Escrita usados neste painel são apenas do primeiro ano.
+A barra de filtros exibe o Ano avaliado como informação de escopo, sem seletor. O ano muda automaticamente com o tipo de avaliação selecionado.
 
 A visão consolidada inclui:
 
 - KPIs de total de alunos, par válido, alfabéticos por período e sem registro por período.
-- Gráfico de rosca com distribuição geral por hipótese e `Sem dado`.
+- Gráfico de rosca com distribuição geral por categoria e `Sem dado`.
 - Gráfico de participação entre preenchidos e sem dado.
 - Mapa de calor com distribuição por período.
 - Comparação por DRE, quando o recorte está em todas as DREs e todas as escolas.
@@ -189,7 +205,7 @@ Antes da lista de alunos, o painel exibe uma tabela de turmas do recorte atual. 
 
 Tabela com estudantes filtráveis por DRE, ano, escola e busca textual. A lista prioriza estudantes com baixa, estabilidade ou alta evolução, usando o ganho entre a hipótese inicial e a do 1º bimestre.
 
-Para proteção de dados, nomes de estudantes são exibidos na interface como `PrimeiroNome (CódigoEOL)`, sem sobrenomes completos. Essa proteção também é aplicada no JSON gerado para a página.
+Para proteção de dados, estudantes são exibidos na interface como `InicialCódigoEOL`, sem espaço e sem parênteses. Essa proteção também é aplicada no JSON gerado para a página, que armazena apenas a inicial no campo de nome.
 
 Por desempenho e legibilidade, a tabela de acompanhamento exibe até 220 estudantes priorizados pela ordenação atual. Quando houver mais estudantes no recorte, o card mostra uma nota com a quantidade exibida e o total priorizado.
 
@@ -200,8 +216,9 @@ A coluna `Turma` é clicável. Ao clicar, abre uma guia na área `Salas abertas`
 ## Filtros disponíveis
 
 - DRE.
-- Ano avaliado: `1º ano`, exibido como informação fixa de escopo.
-- Escola, atualizada conforme DRE selecionada e o recorte fixo de 1º ano.
+- Escola, atualizada conforme DRE e tipo de avaliação.
+- Tipo de avaliação: Sistema de escrita, Escrita ou Produção de Texto.
+- Ano avaliado, exibido como informação fixa de escopo derivada do tipo de avaliação.
 - Busca por aluno ou escola na tabela de acompanhamento.
 
 ## Exportações
@@ -226,8 +243,8 @@ Foram feitas as seguintes verificações:
 - Renderização dos 8 KPIs.
 - Renderização do fluxo, heatmap, ranking, distribuição, velocidade e tabela de alunos.
 - Clique em escola no ranking filtrando os indicadores.
-- Filtros de DRE e Escola atualizando indicadores, gráficos e tabelas, com Ano avaliado informado como `1º ano`.
-- Visão Consolidado com gráfico de rosca e participação no recorte de 1º ano.
+- Filtros de DRE, Escola e Tipo de avaliação atualizando indicadores, gráficos e tabelas, com Ano avaliado derivado do tipo selecionado.
+- Visão Consolidado com gráfico de rosca, participação e tabela dinâmica por categorias do tipo selecionado.
 - Colunas de sem dado na Inicial, sem dado no 1º bimestre e sem par na tabela de turmas.
 - Geração do workbook consolidado em `.xlsx` validada até o ponto permitido pelo navegador interno; downloads não são suportados no Browser da Codex, mas não houve erros de aplicação.
 - Ausência de erros de console no navegador.

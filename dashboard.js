@@ -1,13 +1,45 @@
-const DATA_PATH = "data/lp_sistema_de_escrita.json";
-const LEVELS = ["PS", "SSVC", "SCVC", "SA", "A"];
-const SANKEY_LEVELS = [...LEVELS].reverse();
-const LEVEL_SCORE = { PS: 1, SSVC: 2, SCVC: 3, SA: 4, A: 5 };
+const DATA_PATH = "data/lp_avaliacoes_escrita.json";
+const SYSTEM_LEVELS = ["PS", "SSVC", "SCVC", "SA", "A"];
+const RUBRIC_LEVELS = ["PS", "SSVC", "SCVC", "SA", "Nível 01", "Nível 02", "Nível 03", "Nível 04"];
 const LEVEL_COLORS = {
   PS: "#c43d3d",
   SSVC: "#d9851f",
   SCVC: "#d4ad26",
   SA: "#1f9a7a",
   A: "#1f6feb",
+  "Nível 01": "#a5d6a7",
+  "Nível 02": "#66bb6a",
+  "Nível 03": "#43a047",
+  "Nível 04": "#2e7d32",
+};
+const EVALUATIONS = {
+  se1: {
+    id: "se1",
+    label: "Sistema de escrita",
+    year: "1",
+    levels: SYSTEM_LEVELS,
+    targetLevel: "A",
+    targetLabel: "Alfabéticos",
+    targetTooltip: "alunos na hipótese A",
+  },
+  esc2: {
+    id: "esc2",
+    label: "Escrita",
+    year: "2",
+    levels: RUBRIC_LEVELS,
+    targetLevel: "Nível 04",
+    targetLabel: "Nível 04",
+    targetTooltip: "alunos classificados no Nível 04",
+  },
+  pt3: {
+    id: "pt3",
+    label: "Produção de Texto",
+    year: "3",
+    levels: RUBRIC_LEVELS,
+    targetLevel: "Nível 04",
+    targetLabel: "Nível 04",
+    targetTooltip: "alunos classificados no Nível 04",
+  },
 };
 const STATUS_COLORS = {
   "Alta evolução": "#1a8f5a",
@@ -16,22 +48,25 @@ const STATUS_COLORS = {
   "Baixa": "#c43d3d",
 };
 const COMPACT_SCHEMA = {
-  dre: 0,
-  schoolCode: 1,
-  school: 2,
-  className: 3,
-  studentId: 4,
-  studentName: 5,
-  response: 6,
-  ano: 7,
-  bimestre: 8,
+  evaluation: 0,
+  dre: 1,
+  schoolCode: 2,
+  school: 3,
+  className: 4,
+  studentId: 5,
+  studentName: 6,
+  response: 7,
+  ano: 8,
+  bimestre: 9,
 };
 
 const state = {
+  rawRows: [],
   records: [],
   schools: [],
   dres: [],
   anos: [],
+  selectedEvaluation: "se1",
   selectedDre: "__all__",
   selectedSchool: "__all__",
   selectedAno: "1",
@@ -69,15 +104,51 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => 
   "'": "&#39;",
 }[char]));
 
+function getEvaluationConfig() {
+  return EVALUATIONS[state.selectedEvaluation] || EVALUATIONS.se1;
+}
+
+function getLevels() {
+  return getEvaluationConfig().levels;
+}
+
+function getVisualLevels() {
+  return [...getLevels()].reverse();
+}
+
+function getLevelScore() {
+  return Object.fromEntries(getLevels().map((level, index) => [level, index + 1]));
+}
+
+function getTargetLevel() {
+  return getEvaluationConfig().targetLevel;
+}
+
+function getTargetLabel() {
+  return getEvaluationConfig().targetLabel;
+}
+
+function getEvaluationYear() {
+  return getEvaluationConfig().year;
+}
+
+function getCategoryLabel() {
+  return state.selectedEvaluation === "se1" ? "Hipótese" : "Categoria";
+}
+
 function parseJsonRows(text) {
   const payload = JSON.parse(text);
   return payload.rows || payload;
 }
 
 function normalizeLevel(value) {
-  const raw = (value || "").trim().toUpperCase().replace(/_+$/, "");
+  const text = (value || "").trim();
+  if (!text || text.toUpperCase() === "SEM PREENCHIMENTO") return null;
+  const nivel = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/^NIVEL\s*0?([1-4])$/i);
+  if (nivel) return `Nível 0${nivel[1]}`;
+  const raw = text.toUpperCase().replace(/_+$/, "");
   if (raw === "SSCV") return "SSVC";
-  if (LEVEL_SCORE[raw]) return raw;
+  if (getLevelScore()[raw]) return raw;
   return null;
 }
 
@@ -90,21 +161,24 @@ function classifyGain(gain) {
 
 function readSourceRow(row) {
   if (Array.isArray(row)) {
+    const hasEvaluation = row.length > 9;
     return {
-      question: "Sistema de escrita",
-      studentId: row[COMPACT_SCHEMA.studentId],
-      response: row[COMPACT_SCHEMA.response],
-      bimestre: row[COMPACT_SCHEMA.bimestre],
-      studentName: row[COMPACT_SCHEMA.studentName],
-      schoolCode: row[COMPACT_SCHEMA.schoolCode],
-      school: row[COMPACT_SCHEMA.school],
-      dre: row[COMPACT_SCHEMA.dre],
-      ano: row[COMPACT_SCHEMA.ano],
-      className: row[COMPACT_SCHEMA.className],
+      evaluation: hasEvaluation ? row[COMPACT_SCHEMA.evaluation] : "se1",
+      question: hasEvaluation ? getEvaluationConfig().label : "Sistema de escrita",
+      studentId: hasEvaluation ? row[COMPACT_SCHEMA.studentId] : row[4],
+      response: hasEvaluation ? row[COMPACT_SCHEMA.response] : row[6],
+      bimestre: hasEvaluation ? row[COMPACT_SCHEMA.bimestre] : row[8],
+      studentName: hasEvaluation ? row[COMPACT_SCHEMA.studentName] : row[5],
+      schoolCode: hasEvaluation ? row[COMPACT_SCHEMA.schoolCode] : row[1],
+      school: hasEvaluation ? row[COMPACT_SCHEMA.school] : row[2],
+      dre: hasEvaluation ? row[COMPACT_SCHEMA.dre] : row[0],
+      ano: hasEvaluation ? row[COMPACT_SCHEMA.ano] : row[7],
+      className: hasEvaluation ? row[COMPACT_SCHEMA.className] : row[3],
     };
   }
 
   return {
+    evaluation: row["Avaliação"] || "se1",
     question: row["Questão"],
     studentId: row["Código EOL Estudante"],
     response: row["Resposta"],
@@ -124,7 +198,8 @@ function buildStudentRecords(rows) {
 
   rows.forEach((row) => {
     const source = readSourceRow(row);
-    if (source.question && source.question !== "Sistema de escrita") return;
+    if (source.evaluation && source.evaluation !== state.selectedEvaluation) return;
+    if (!source.evaluation && source.question && source.question !== "Sistema de escrita") return;
     const studentId = source.studentId;
     if (!studentId) return;
     const level = normalizeLevel(source.response);
@@ -158,7 +233,8 @@ function buildStudentRecords(rows) {
 
   const records = Array.from(byStudent.values()).map((record) => {
     const hasPair = Boolean(record.initial && record.final);
-    const gain = hasPair ? LEVEL_SCORE[record.final] - LEVEL_SCORE[record.initial] : null;
+    const score = getLevelScore();
+    const gain = hasPair ? score[record.final] - score[record.initial] : null;
     const missingInitial = !record.initial;
     const missingFinal = !record.final;
     return {
@@ -195,8 +271,9 @@ function summarize(records) {
   const stable = paired.filter((record) => record.gain === 0).length;
   const regressed = paired.filter((record) => record.gain < 0).length;
   const avgGain = paired.reduce((sum, record) => sum + record.gain, 0) / total;
-  const initialAlpha = paired.filter((record) => record.initial === "A").length / total;
-  const finalAlpha = paired.filter((record) => record.final === "A").length / total;
+  const target = getTargetLevel();
+  const initialAlpha = paired.filter((record) => record.initial === target).length / total;
+  const finalAlpha = paired.filter((record) => record.final === target).length / total;
   return { paired, total, improved, stable, regressed, avgGain, initialAlpha, finalAlpha };
 }
 
@@ -215,8 +292,9 @@ function schoolStats(records) {
 
   return Array.from(grouped.values()).map((school) => {
     const summary = summarize(school.records);
-    const finalAlphaCount = summary.paired.filter((record) => record.final === "A").length;
-    const initialAlphaCount = summary.paired.filter((record) => record.initial === "A").length;
+    const target = getTargetLevel();
+    const finalAlphaCount = summary.paired.filter((record) => record.final === target).length;
+    const initialAlphaCount = summary.paired.filter((record) => record.initial === target).length;
     return {
       ...school,
       total: summary.total,
@@ -224,7 +302,7 @@ function schoolStats(records) {
       stablePct: summary.stable / summary.total,
       regressedPct: summary.regressed / summary.total,
       avgGain: summary.avgGain,
-      initialPsPct: summary.paired.filter((record) => record.initial === "PS").length / summary.total,
+      initialPsPct: summary.paired.filter((record) => record.initial === getLevels()[0]).length / summary.total,
       finalAlphaCount,
       initialAlphaCount,
       finalAlphaPct: summary.finalAlpha,
@@ -250,8 +328,9 @@ function groupedStats(records, getKey, getName) {
 
   return Array.from(grouped.values()).map((group) => {
     const summary = summarize(group.records);
-    const finalAlphaCount = summary.paired.filter((record) => record.final === "A").length;
-    const initialAlphaCount = summary.paired.filter((record) => record.initial === "A").length;
+    const target = getTargetLevel();
+    const finalAlphaCount = summary.paired.filter((record) => record.final === target).length;
+    const initialAlphaCount = summary.paired.filter((record) => record.initial === target).length;
     return {
       ...group,
       total: summary.total,
@@ -273,7 +352,7 @@ function dreStats(records) {
 }
 
 function countByLevel(records, field) {
-  const counts = Object.fromEntries(LEVELS.map((level) => [level, 0]));
+  const counts = Object.fromEntries(getLevels().map((level) => [level, 0]));
   records.forEach((record) => {
     if (record[field]) counts[record[field]] += 1;
   });
@@ -284,14 +363,16 @@ function renderKpis(records) {
   const summary = summarize(records);
   const missingPair = filterRecords(state.records, { includeMissing: true }).filter((record) => !record.hasPair).length;
   const totalStudentsInScope = summary.paired.length + missingPair || 1;
-  const finalAlphaCount = summary.paired.filter((record) => record.final === "A").length;
-  const initialAlphaCount = summary.paired.filter((record) => record.initial === "A").length;
+  const target = getTargetLevel();
+  const targetLabel = getTargetLabel();
+  const finalAlphaCount = summary.paired.filter((record) => record.final === target).length;
+  const initialAlphaCount = summary.paired.filter((record) => record.initial === target).length;
   const alphaCountDelta = finalAlphaCount - initialAlphaCount;
   const alphaDelta = summary.finalAlpha - summary.initialAlpha;
 
   const items = [
-    ["Alfabéticos (1ºBI)", formatPct(summary.finalAlpha), `${formatNumber(finalAlphaCount)} alunos`, "Percentual e quantidade de alunos na hipótese A no 1º bimestre, entre alunos com par válido."],
-    ["Alfabéticos (diferença)", `${alphaDelta >= 0 ? "+" : ""}${formatPct(alphaDelta)}`, `${alphaCountDelta >= 0 ? "+" : ""}${formatNumber(alphaCountDelta)} alunos`, "Diferença entre alunos na hipótese A no 1º bimestre e na avaliação inicial, em percentual e quantidade."],
+    [`${targetLabel} (1ºBI)`, formatPct(summary.finalAlpha), `${formatNumber(finalAlphaCount)} alunos`, `Percentual e quantidade de ${getEvaluationConfig().targetTooltip} no 1º bimestre, entre alunos com par válido.`],
+    [`${targetLabel} (diferença)`, `${alphaDelta >= 0 ? "+" : ""}${formatPct(alphaDelta)}`, `${alphaCountDelta >= 0 ? "+" : ""}${formatNumber(alphaCountDelta)} alunos`, `Diferença entre ${getEvaluationConfig().targetTooltip} no 1º bimestre e na avaliação inicial, em percentual e quantidade.`],
     ["Alunos com par válido", formatPct(summary.paired.length / totalStudentsInScope), `${formatNumber(summary.paired.length)} alunos`, "Alunos com hipótese válida na avaliação inicial e no 1º bimestre; são os únicos usados nos cálculos de evolução."],
     ["Sem par válido", formatPct(missingPair / totalStudentsInScope), `${formatNumber(missingPair)} alunos`, "Alunos sem hipótese válida em um dos dois períodos; ficam fora dos cálculos de evolução."],
     ["Melhoraram", formatPct(summary.improved / summary.total), `${formatNumber(summary.improved)} alunos`, "Alunos cujo nível numérico aumentou entre a inicial e o 1º bimestre."],
@@ -311,21 +392,30 @@ function renderKpis(records) {
 
 function renderSankey(records) {
   const flows = [];
-  const maxStroke = 34;
+  const levels = getLevels();
+  const visualLevels = getVisualLevels();
+  const many = levels.length > 5;
+  const halfH = many ? 22 : 28;
+  const blockH = halfH * 2;
+  const rowGap = blockH + (many ? 10 : 2);
+  const maxStroke = many ? 24 : 34;
+  const nameFontSize = many ? 13 : 16;
+  const nameOffY = many ? -4 : -5;
+  const metaOffY = many ? 12 : 15;
+
   const leftCounts = countByLevel(records, "initial");
   const rightCounts = countByLevel(records, "final");
-  const matrix = LEVELS.flatMap((initial) =>
-    LEVELS.map((final) => ({
+  const matrix = levels.flatMap((initial) =>
+    levels.map((final) => ({
       initial,
       final,
       count: records.filter((record) => record.initial === initial && record.final === final).length,
     })).filter((flow) => flow.count > 0)
   );
   const maxFlow = Math.max(1, ...matrix.map((flow) => flow.count));
-  const height = 350;
-  const rowGap = 58;
   const top = 68;
-  const y = Object.fromEntries(SANKEY_LEVELS.map((level, index) => [level, top + index * rowGap]));
+  const height = top * 2 + (visualLevels.length - 1) * rowGap;
+  const y = Object.fromEntries(visualLevels.map((level, index) => [level, top + index * rowGap]));
 
   matrix.forEach((flow) => {
     const stroke = 2 + (flow.count / maxFlow) * maxStroke;
@@ -343,12 +433,21 @@ function renderSankey(records) {
   });
 
   const total = records.length || 1;
-  const nodeBlock = (level, x, count) => `
-    <rect x="${x}" y="${y[level] - 28}" width="116" height="56" rx="7" fill="${LEVEL_COLORS[level]}" opacity="0.96"></rect>
-    <text x="${x + 58}" y="${y[level] - 5}" text-anchor="middle" fill="#fff" font-size="16" font-weight="850">${level}</text>
-    <text class="node-meta" x="${x + 58}" y="${y[level] + 15}" text-anchor="middle">${formatNumber(count)} · ${formatPct(count / total)}</text>
+  const nodeFg = (hex) => {
+    const [r, g, b] = [hex.slice(1,3), hex.slice(3,5), hex.slice(5,7)].map(h => parseInt(h, 16));
+    return (0.299*r + 0.587*g + 0.114*b) / 255 > 0.52 ? '#18212f' : '#ffffff';
+  };
+  const nodeBlock = (level, x, count) => {
+    const bg = LEVEL_COLORS[level];
+    const fg = nodeFg(bg);
+    const fgMeta = fg === '#ffffff' ? 'rgba(255,255,255,0.88)' : 'rgba(24,33,47,0.68)';
+    return `
+    <rect x="${x}" y="${y[level] - halfH}" width="116" height="${blockH}" rx="7" fill="${bg}" opacity="0.96"></rect>
+    <text x="${x + 58}" y="${y[level] + nameOffY}" text-anchor="middle" fill="${fg}" font-size="${nameFontSize}" font-weight="850">${level}</text>
+    <text class="node-meta" x="${x + 58}" y="${y[level] + metaOffY}" text-anchor="middle" fill="${fgMeta}">${formatNumber(count)} · ${formatPct(count / total)}</text>
   `;
-  const nodes = SANKEY_LEVELS.map((level) => `
+  };
+  const nodes = visualLevels.map((level) => `
     <g>
       ${nodeBlock(level, 18, leftCounts[level])}
       ${nodeBlock(level, 646, rightCounts[level])}
@@ -370,6 +469,7 @@ function renderHeatmap(records) {
   const initial = countByLevel(records, "initial");
   const final = countByLevel(records, "final");
   const total = Math.max(1, records.length);
+  const visualLevels = getVisualLevels();
 
   const renderPeriod = (title, counts) => `
     <div class="heatmap-period">
@@ -377,13 +477,13 @@ function renderHeatmap(records) {
       <table>
         <thead>
           <tr>
-            <th>Hipótese</th>
+            <th>${getCategoryLabel()}</th>
             <th>Alunos</th>
             <th>%</th>
           </tr>
         </thead>
         <tbody>
-          ${SANKEY_LEVELS.map((level) => {
+          ${visualLevels.map((level) => {
             const count = counts[level];
             const pct = count / total;
             return `
@@ -471,11 +571,12 @@ function renderDistribution(records) {
   const initial = countByLevel(records, "initial");
   const final = countByLevel(records, "final");
   const total = Math.max(1, records.length);
+  const visualLevels = getVisualLevels();
 
   const renderBars = (title, counts) => `
     <div>
       <p class="mini-title">${title}</p>
-      ${SANKEY_LEVELS.map((level) => {
+      ${visualLevels.map((level) => {
         const pct = counts[level] / total;
         return `
           <div class="bar-row">
@@ -516,15 +617,16 @@ function renderVelocity(records) {
 }
 
 function consolidadoLevelStats(records, field) {
-  const counts = { PS: 0, SSVC: 0, SCVC: 0, SA: 0, A: 0, sem: 0 };
+  const counts = Object.fromEntries(getLevels().map((level) => [level, 0]));
+  counts.sem = 0;
   records.forEach((r) => {
     const v = r[field];
-    if (LEVEL_SCORE[v]) counts[v]++;
+    if (getLevelScore()[v]) counts[v]++;
     else counts.sem++;
   });
   const total = records.length || 1;
   const pct = {};
-  [...LEVELS, "sem"].forEach((l) => { pct[l] = counts[l] / total; });
+  [...getLevels(), "sem"].forEach((l) => { pct[l] = counts[l] / total; });
   return { counts, pct, total: records.length };
 }
 
@@ -557,11 +659,13 @@ function renderConsolidadoKpis(records) {
   const initial = consolidadoLevelStats(records, "initial");
   const fin = consolidadoLevelStats(records, "final");
   const missing = missingStats(records);
+  const target = getTargetLevel();
+  const targetLabel = getTargetLabel();
   const items = [
     ["Total de alunos", formatNumber(records.length), "no recorte selecionado", "Total de alunos registrados no recorte, incluindo aqueles sem par válido."],
     ["Com par válido", formatPct(missing.pairedPct), `${formatNumber(missing.paired)} alunos`, "Alunos com hipótese válida na avaliação inicial e no 1º bimestre."],
-    ["Alfabéticos – Inicial", formatPct(initial.pct.A), `${formatNumber(initial.counts.A)} alunos`, "Percentual de alunos na hipótese A na avaliação inicial, sobre todos os alunos do recorte."],
-    ["Alfabéticos – 1ºBI", formatPct(fin.pct.A), `${formatNumber(fin.counts.A)} alunos`, "Percentual de alunos na hipótese A no 1º bimestre, sobre todos os alunos do recorte."],
+    [`${targetLabel} – Inicial`, formatPct(initial.pct[target]), `${formatNumber(initial.counts[target])} alunos`, `Percentual de ${getEvaluationConfig().targetTooltip} na avaliação inicial, sobre todos os alunos do recorte.`],
+    [`${targetLabel} – 1ºBI`, formatPct(fin.pct[target]), `${formatNumber(fin.counts[target])} alunos`, `Percentual de ${getEvaluationConfig().targetTooltip} no 1º bimestre, sobre todos os alunos do recorte.`],
     ["Sem registro – Inicial", formatPct(missing.missingInitialPct), `${formatNumber(missing.missingInitial)} alunos`, "Alunos sem hipótese registrada ou inválida na avaliação inicial."],
     ["Sem registro – 1ºBI", formatPct(fin.pct.sem), `${formatNumber(fin.counts.sem)} alunos`, "Alunos sem hipótese registrada ou inválida no 1º bimestre."],
   ];
@@ -584,14 +688,14 @@ function renderConsolidadoKpis(records) {
 function renderConsolidadoHeatmap(records) {
   const initial = consolidadoLevelStats(records, "initial");
   const fin = consolidadoLevelStats(records, "final");
-  const chartLevels = [...SANKEY_LEVELS, "sem"];
+  const chartLevels = [...getVisualLevels(), "sem"];
 
   const renderPeriod = (title, stats) => `
     <div class="heatmap-period">
       <p class="mini-title">${title}</p>
       <table>
         <thead>
-          <tr><th>Hipótese</th><th>Alunos</th><th>%</th></tr>
+          <tr><th>${getCategoryLabel()}</th><th>Alunos</th><th>%</th></tr>
         </thead>
         <tbody>
           ${chartLevels.map((level) => {
@@ -638,10 +742,10 @@ function renderConsolidadoDreChart(records) {
     grouped.get(r.dre).push(r);
   });
 
-  const chartLevels = [...LEVELS, "sem"];
+  const chartLevels = [...getLevels(), "sem"];
   const dreData = Array.from(grouped.entries())
     .map(([dre, recs]) => ({ dre, stats: consolidadoLevelStats(recs, field) }))
-    .sort((a, b) => b.stats.pct.A - a.stats.pct.A);
+    .sort((a, b) => (b.stats.pct[getTargetLevel()] ?? 0) - (a.stats.pct[getTargetLevel()] ?? 0));
 
   if (!dreData.length) {
     document.querySelector("#consolidado-dre-chart").innerHTML = `<p class="empty-state">Nenhum dado disponível.</p>`;
@@ -680,6 +784,7 @@ function renderConsolidadoSchoolTable(records) {
   const field = state.consolidadoSchoolPeriod === "initial" ? "initial" : "final";
   const sortBy = state.consolidadoSchoolSortBy;
   const dir = state.consolidadoSchoolSortDir === "asc" ? 1 : -1;
+  const levels = getLevels();
 
   const grouped = new Map();
   records.forEach((r) => {
@@ -700,7 +805,15 @@ function renderConsolidadoSchoolTable(records) {
       return dir * (aVal - bVal);
     });
 
-  const chartLevels = [...LEVELS, "sem"];
+  const chartLevels = [...levels, "sem"];
+  document.querySelector("#consolidado-school-table thead").innerHTML = `
+    <tr>
+      <th>Escola</th>
+      <th>Total</th>
+      ${levels.map((level) => `<th>${escapeHtml(level)}</th>`).join("")}
+      <th>Sem dado</th>
+    </tr>
+  `;
   const rows = schools.map((s) => {
     const selected = state.selectedSchool === s.schoolCode;
     const cells = chartLevels.map((level) => {
@@ -716,14 +829,14 @@ function renderConsolidadoSchoolTable(records) {
   }).join("");
 
   document.querySelector("#consolidado-school-table tbody").innerHTML = rows || `
-    <tr><td colspan="9" class="empty-table">Nenhuma escola encontrada para o recorte atual.</td></tr>
+    <tr><td colspan="${levels.length + 3}" class="empty-table">Nenhuma escola encontrada para o recorte atual.</td></tr>
   `;
 }
 
 function renderConsolidadoDesempenho(records) {
   const field = state.consolidadoChartPeriod === "initial" ? "initial" : "final";
   const stats = consolidadoLevelStats(records, field);
-  const chartLevels = [...SANKEY_LEVELS, "sem"];
+  const chartLevels = [...getVisualLevels(), "sem"];
 
   const maxRaw = Math.max(0.05, ...chartLevels.map((l) => stats.pct[l] ?? 0));
   const maxPct = Math.ceil(maxRaw * 10) / 10;
@@ -806,7 +919,7 @@ function donutArcPath(cx, cy, outerR, innerR, startAngle, endAngle) {
 function renderConsolidadoDonut(records) {
   const field = state.consolidadoDonutPeriod === "initial" ? "initial" : "final";
   const stats = consolidadoLevelStats(records, field);
-  const chartLevels = [...SANKEY_LEVELS, "sem"];
+  const chartLevels = [...getVisualLevels(), "sem"];
   const total = Math.max(1, records.length);
   let angle = 0;
   const slices = chartLevels.map((level) => {
@@ -1031,8 +1144,9 @@ function classStats(records) {
     const pairedTotal = paired.length || 1;
     const missingInitial = group.records.filter((record) => record.missingInitial).length;
     const missingFinal = group.records.filter((record) => record.missingFinal).length;
-    const finalAlphaCount = paired.filter((record) => record.final === "A").length;
-    const initialAlphaCount = paired.filter((record) => record.initial === "A").length;
+    const target = getTargetLevel();
+    const finalAlphaCount = paired.filter((record) => record.final === target).length;
+    const initialAlphaCount = paired.filter((record) => record.initial === target).length;
     const improved = paired.filter((record) => record.gain > 0).length;
     const stable = paired.filter((record) => record.gain === 0).length;
     const regressed = paired.filter((record) => record.gain < 0).length;
@@ -1136,7 +1250,8 @@ function renderStudents(records) {
 function sortStudents(a, b) {
   const direction = state.studentSortDir === "asc" ? 1 : -1;
   const key = state.studentSortBy;
-  const scoreValue = (record, field) => LEVEL_SCORE[record[field]] || 0;
+  const score = getLevelScore();
+  const scoreValue = (record, field) => score[record[field]] || 0;
   const value = (record) => {
     if (key === "initial" || key === "final") return scoreValue(record, key);
     if (key === "name") return getStudentDisplayName(record);
@@ -1167,12 +1282,12 @@ function getClassroomRecords(tab) {
   );
 }
 
-function getFirstName(name) {
-  return String(name || "").trim().split(/\s+/)[0] || "Aluno";
+function getStudentInitial(name) {
+  return String(name || "").trim().slice(0, 1).toUpperCase() || "A";
 }
 
 function getStudentDisplayName(record) {
-  return `${getFirstName(record.name)} (${record.id})`;
+  return `${getStudentInitial(record.name)}${record.id}`;
 }
 
 function evolutionMarker(record, period) {
@@ -1198,7 +1313,7 @@ function renderClassroomView(tab) {
   const schoolName = records[0]?.school || getSchoolLabel();
   const total = Math.max(1, records.length);
   const missing = records.filter((record) => !record[field]);
-  const groups = LEVELS.map((level) => ({
+  const groups = getLevels().map((level) => ({
     level,
     color: LEVEL_COLORS[level],
     records: records.filter((record) => record[field] === level),
@@ -1246,7 +1361,7 @@ function renderClassroomView(tab) {
                   ${evolutionMarker(record, period)}
                   <span class="student-head"></span>
                   <span class="student-body"></span>
-                  <span class="student-name">${escapeHtml(getFirstName(record.name))}</span>
+                  <span class="student-name">${escapeHtml(getStudentDisplayName(record))}</span>
                 </span>
               `).join("")}
             </div>
@@ -1318,6 +1433,7 @@ function getSchoolLabel() {
 
 function renderFilterSummary(records) {
   const filters = [
+    ["Avaliação", getEvaluationConfig().label],
     ["DRE", state.selectedDre === "__all__" ? "Todas as DREs" : state.selectedDre],
     ["Escola", getSchoolLabel()],
     ["Ano", `${state.selectedAno}º ano`],
@@ -1343,13 +1459,99 @@ function renderFilterSummary(records) {
 function populateFilters() {
   const dres = Array.from(new Set(state.records.map((r) => r.dre).filter(Boolean)))
     .sort((a, b) => a.localeCompare(b, "pt-BR"));
-  const anos = ["1"];
+  const anos = [state.selectedAno];
   state.dres = dres;
   state.anos = anos;
   document.querySelector("#dreFilter").innerHTML =
     `<option value="__all__">Todas as DREs</option>` +
     dres.map((dre) => `<option value="${escapeHtml(dre)}">${escapeHtml(dre)}</option>`).join("");
   populateSchoolFilter();
+}
+
+function populateEvaluationFilter() {
+  const select = document.querySelector("#evaluationFilter");
+  if (!select) return;
+  select.innerHTML = Object.values(EVALUATIONS).map((evaluation) =>
+    `<option value="${evaluation.id}">${escapeHtml(evaluation.label)}</option>`
+  ).join("");
+  select.value = state.selectedEvaluation;
+}
+
+function updateEvaluationContext() {
+  const config = getEvaluationConfig();
+  state.selectedAno = config.year;
+  const yearLabel = document.querySelector("#evaluationYearLabel");
+  if (yearLabel) yearLabel.textContent = `${config.year}º ano`;
+  const topbarTitle = document.querySelector("#topbarTitle");
+  if (topbarTitle) topbarTitle.textContent = config.label;
+}
+
+function updateLevelControls() {
+  const levels = getLevels();
+  const optionHtml = (periodLabel) => levels.map((level) =>
+    `<option value="${escapeHtml(level)}">${escapeHtml(level)} ${periodLabel}</option>`
+  ).join("");
+  const scatterX = document.querySelector("#scatterXLevel");
+  const scatterY = document.querySelector("#scatterYLevel");
+  if (scatterX) {
+    scatterX.innerHTML = optionHtml("inicial");
+    if (!levels.includes(state.scatterXLevel)) state.scatterXLevel = levels[0];
+    scatterX.value = state.scatterXLevel;
+  }
+  if (scatterY) {
+    scatterY.innerHTML = optionHtml("1ºBI");
+    if (!levels.includes(state.scatterYLevel)) state.scatterYLevel = getTargetLevel();
+    scatterY.value = state.scatterYLevel;
+  }
+  const target = getTargetLevel();
+  const targetLabel = getTargetLabel();
+  [
+    ["#rankingSortBy", "finalAlphaPct", `${targetLabel} (1ºBI)`],
+    ["#rankingSortBy", "alphaDeltaPct", `${targetLabel} (diferença)`],
+    ["#dreRankingSortBy", "finalAlphaPct", `${targetLabel} (1ºBI)`],
+    ["#dreRankingSortBy", "alphaDeltaPct", `${targetLabel} (diferença)`],
+    ["#classesSortBy", "finalAlphaPct", `${targetLabel} (1ºBI)`],
+  ].forEach(([selector, value, label]) => {
+    const option = document.querySelector(`${selector} option[value="${value}"]`);
+    if (option) option.textContent = label;
+  });
+  const consolidatedSort = document.querySelector("#consolidadoSchoolSortBy");
+  if (consolidatedSort) {
+    consolidatedSort.innerHTML = levels.map((level) =>
+      `<option value="${escapeHtml(level)}">${escapeHtml(level)}</option>`
+    ).join("") + `<option value="sem">Sem dado</option><option value="total">Total</option><option value="school">Escola</option>`;
+    if (!levels.includes(state.consolidadoSchoolSortBy) && !["sem", "total", "school"].includes(state.consolidadoSchoolSortBy)) {
+      state.consolidadoSchoolSortBy = target;
+    }
+    consolidatedSort.value = state.consolidadoSchoolSortBy;
+  }
+}
+
+function updateTableLabels() {
+  const targetLabel = getTargetLabel();
+  const setText = (selector, text) => {
+    const element = document.querySelector(selector);
+    if (element) element.textContent = text;
+  };
+  setText("#dreRankingTable thead th:nth-child(3)", `${targetLabel} (1ºBI)`);
+  setText("#dreRankingTable thead th:nth-child(4)", `${targetLabel} (diferença)`);
+  setText("#rankingTable thead th:nth-child(3)", `${targetLabel} (1ºBI)`);
+  setText("#rankingTable thead th:nth-child(4)", `${targetLabel} (diferença)`);
+  setText("#classesTable thead th:nth-child(8)", `${targetLabel} (1ºBI)`);
+}
+
+function rebuildRecordsForEvaluation() {
+  updateEvaluationContext();
+  state.records = buildStudentRecords(state.rawRows);
+  state.scatterXLevel = getLevels()[0];
+  state.scatterYLevel = getTargetLevel();
+  state.consolidadoSchoolSortBy = getTargetLevel();
+  state.selectedSchool = "__all__";
+  state.classroomTabs = [];
+  state.activeClassroomTabId = null;
+  populateFilters();
+  updateLevelControls();
+  updateTableLabels();
 }
 
 function populateSchoolFilter() {
@@ -1391,22 +1593,118 @@ function render() {
   renderClassroomTabs();
 }
 
+let _progressTimer = null;
+
+function startPageProgress() {
+  const bar = document.getElementById("page-progress");
+  if (!bar) return;
+  if (_progressTimer) { clearTimeout(_progressTimer); _progressTimer = null; }
+  bar.style.transition = "none";
+  bar.style.opacity = "1";
+  bar.style.width = "5%";
+  bar.offsetWidth; // reflow
+  bar.style.transition = "width 700ms cubic-bezier(0.1, 0.5, 0.8, 1)";
+  bar.style.width = "65%";
+  const main = document.querySelector("main");
+  if (main) main.classList.add("is-rendering");
+}
+
+function finishPageProgress() {
+  const bar = document.getElementById("page-progress");
+  if (!bar) return;
+  const main = document.querySelector("main");
+  if (main) main.classList.remove("is-rendering");
+  bar.style.transition = "width 150ms ease";
+  bar.style.width = "100%";
+  _progressTimer = setTimeout(() => {
+    bar.style.transition = "opacity 260ms ease";
+    bar.style.opacity = "0";
+    _progressTimer = setTimeout(() => {
+      bar.style.transition = "none";
+      bar.style.width = "0%";
+      _progressTimer = null;
+    }, 270);
+  }, 160);
+}
+
+function renderAsync(fn) {
+  startPageProgress();
+  return new Promise(resolve => {
+    setTimeout(() => {
+      fn();
+      finishPageProgress();
+      resolve();
+    }, 30);
+  });
+}
+
+function setLoadProgress(frac, status) {
+  const fill = document.getElementById("loader-fill");
+  const bar = document.getElementById("loader-bar");
+  const statusEl = document.getElementById("loader-status");
+  const pct = Math.round(frac * 100);
+  if (fill) fill.style.width = `${pct}%`;
+  if (bar) bar.setAttribute("aria-valuenow", pct);
+  if (statusEl && status !== undefined) statusEl.textContent = status;
+}
+
+function hideLoader() {
+  const el = document.getElementById("app-loader");
+  if (!el) return;
+  el.classList.add("is-done");
+  el.addEventListener("transitionend", () => el.remove(), { once: true });
+}
+
 async function init() {
+  setLoadProgress(0.04, "Baixando dados…");
+
   const response = await fetch(DATA_PATH);
   if (!response.ok) throw new Error(`Falha ao carregar ${DATA_PATH}`);
-  const rows = parseJsonRows(await response.text());
-  state.records = buildStudentRecords(rows);
-  populateFilters();
 
+  const contentLength = response.headers.get("content-length");
+  const total = contentLength ? parseInt(contentLength, 10) : 0;
+  let text;
+  if (total && response.body) {
+    const reader = response.body.getReader();
+    const chunks = [];
+    let received = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      setLoadProgress(0.04 + (received / total) * 0.56, "Baixando dados…");
+    }
+    const all = new Uint8Array(received);
+    let pos = 0;
+    for (const chunk of chunks) { all.set(chunk, pos); pos += chunk.length; }
+    text = new TextDecoder().decode(all);
+  } else {
+    text = await response.text();
+    setLoadProgress(0.60, "Baixando dados…");
+  }
+
+  setLoadProgress(0.65, "Processando dados…");
+  const rows = parseJsonRows(text);
+  state.rawRows = rows;
+  populateEvaluationFilter();
+
+  setLoadProgress(0.78, "Processando dados…");
+  rebuildRecordsForEvaluation();
+
+  document.querySelector("#evaluationFilter").addEventListener("change", (event) => {
+    state.selectedEvaluation = event.target.value;
+    renderAsync(() => { rebuildRecordsForEvaluation(); render(); });
+  });
   document.querySelector("#dreFilter").addEventListener("change", (event) => {
     state.selectedDre = event.target.value;
     populateSchoolFilter();
-    render();
+    renderAsync(() => render());
   });
   document.querySelector("#schoolFilter").addEventListener("change", (event) => {
     state.selectedSchool = event.target.value;
     syncDreForSchool(state.selectedSchool);
-    render();
+    renderAsync(() => render());
   });
   document.querySelector("#scatterXLevel").addEventListener("change", (event) => {
     state.scatterXLevel = event.target.value;
@@ -1438,7 +1736,7 @@ async function init() {
     state.selectedDre = row.dataset.dre;
     document.querySelector("#dreFilter").value = state.selectedDre;
     populateSchoolFilter();
-    render();
+    renderAsync(() => render());
   });
   document.querySelector("#rankingTable tbody").addEventListener("click", (event) => {
     const row = event.target.closest("[data-school-code]");
@@ -1446,7 +1744,7 @@ async function init() {
     state.selectedSchool = row.dataset.schoolCode;
     syncDreForSchool(state.selectedSchool);
     document.querySelector("#schoolFilter").value = state.selectedSchool;
-    render();
+    renderAsync(() => render());
   });
   document.querySelector("#studentSortBy").addEventListener("change", (event) => {
     state.studentSortBy = event.target.value;
@@ -1510,14 +1808,14 @@ async function init() {
     state.viewMode = "evolucao";
     document.querySelector("#switchEvolucao").classList.add("active");
     document.querySelector("#switchConsolidado").classList.remove("active");
-    render();
+    renderAsync(() => render());
   });
   document.querySelector("#switchConsolidado").addEventListener("click", () => {
     if (state.viewMode === "consolidado") return;
     state.viewMode = "consolidado";
     document.querySelector("#switchConsolidado").classList.add("active");
     document.querySelector("#switchEvolucao").classList.remove("active");
-    render();
+    renderAsync(() => render());
   });
   document.querySelector("#consolidadoChartPeriod").addEventListener("change", (e) => {
     state.consolidadoChartPeriod = e.target.value;
@@ -1563,7 +1861,7 @@ async function init() {
     state.selectedSchool = row.dataset.schoolCode;
     syncDreForSchool(state.selectedSchool);
     document.querySelector("#schoolFilter").value = state.selectedSchool;
-    render();
+    renderAsync(() => render());
   });
 
   const appLayout = document.querySelector(".app-layout");
@@ -1639,7 +1937,10 @@ async function init() {
     head.appendChild(btn);
   });
 
+  setLoadProgress(0.92, "Renderizando painel…");
   render();
+  setLoadProgress(1.0, "Pronto!");
+  setTimeout(hideLoader, 120);
 }
 
 function parseExportValue(value) {
@@ -1679,12 +1980,12 @@ function getPeriodLabel(period) {
 }
 
 function distributionRows(records) {
-  const rows = [["Período", "Hipótese", "Alunos", "%"]];
+  const rows = [["Período", getCategoryLabel(), "Alunos", "%"]];
   [
     ["initial", consolidadoLevelStats(records, "initial")],
     ["final", consolidadoLevelStats(records, "final")],
   ].forEach(([period, stats]) => {
-    [...LEVELS, "sem"].forEach((level) => {
+    [...getLevels(), "sem"].forEach((level) => {
       rows.push([
         getPeriodLabel(period),
         level === "sem" ? "Sem dado" : level,
@@ -1698,7 +1999,7 @@ function distributionRows(records) {
 
 function schoolDistributionRows(records, period) {
   const field = period === "initial" ? "initial" : "final";
-  const rows = [["Escola", "Código EOL Escola", "Total", "PS", "% PS", "SSVC", "% SSVC", "SCVC", "% SCVC", "SA", "% SA", "A", "% A", "Sem dado", "% Sem dado"]];
+  const rows = [["Escola", "Código EOL Escola", "Total", ...getLevels().flatMap((level) => [level, `% ${level}`]), "Sem dado", "% Sem dado"]];
   const grouped = new Map();
   records.forEach((record) => {
     if (!record.schoolCode) return;
@@ -1713,16 +2014,7 @@ function schoolDistributionRows(records, period) {
         group.school,
         group.schoolCode,
         stats.total,
-        stats.counts.PS,
-        stats.pct.PS,
-        stats.counts.SSVC,
-        stats.pct.SSVC,
-        stats.counts.SCVC,
-        stats.pct.SCVC,
-        stats.counts.SA,
-        stats.pct.SA,
-        stats.counts.A,
-        stats.pct.A,
+        ...getLevels().flatMap((level) => [stats.counts[level], stats.pct[level]]),
         stats.counts.sem,
         stats.pct.sem,
       ]);
@@ -1731,7 +2023,8 @@ function schoolDistributionRows(records, period) {
 }
 
 function classExportRows(records) {
-  const rows = [["DRE", "Escola", "Código EOL Escola", "Turma", "Total", "Par válido", "% Par válido", "Sem dado Inicial", "% Sem dado Inicial", "Sem dado 1ºBI", "% Sem dado 1ºBI", "Sem par", "% Sem par", "Alfabéticos 1ºBI", "% Alfabéticos 1ºBI", "Índice de Evolução"]];
+  const targetLabel = getTargetLabel();
+  const rows = [["DRE", "Escola", "Código EOL Escola", "Turma", "Total", "Par válido", "% Par válido", "Sem dado Inicial", "% Sem dado Inicial", "Sem dado 1ºBI", "% Sem dado 1ºBI", "Sem par", "% Sem par", `${targetLabel} 1ºBI`, `% ${targetLabel} 1ºBI`, "Índice de Evolução"]];
   sortClassStats(classStats(records), "school", "asc").forEach((group) => {
     const dre = group.records[0]?.dre || "";
     const total = Math.max(1, group.total);
@@ -1796,9 +2089,12 @@ function exportConsolidadoWorkbook() {
   const missing = missingStats(records);
   const initial = consolidadoLevelStats(records, "initial");
   const fin = consolidadoLevelStats(records, "final");
+  const target = getTargetLevel();
+  const targetLabel = getTargetLabel();
   const wb = XLSX.utils.book_new();
   const summaryRows = [
     ["Campo", "Valor"],
+    ["Tipo de avaliação", getEvaluationConfig().label],
     ["DRE", state.selectedDre === "__all__" ? "Todas as DREs" : state.selectedDre],
     ["Escola", getSchoolLabel()],
     ["Ano", `${state.selectedAno}º ano`],
@@ -1811,10 +2107,10 @@ function exportConsolidadoWorkbook() {
     ["% sem dado 1ºBI", missing.missingFinalPct],
     ["Sem par", missing.missingPair],
     ["% sem par", missing.missingPairPct],
-    ["Alfabéticos Inicial", initial.counts.A],
-    ["% alfabéticos Inicial", initial.pct.A],
-    ["Alfabéticos 1ºBI", fin.counts.A],
-    ["% alfabéticos 1ºBI", fin.pct.A],
+    [`${targetLabel} Inicial`, initial.counts[target]],
+    [`% ${targetLabel} Inicial`, initial.pct[target]],
+    [`${targetLabel} 1ºBI`, fin.counts[target]],
+    [`% ${targetLabel} 1ºBI`, fin.pct[target]],
   ];
   [
     ["Resumo", summaryRows],
@@ -1830,6 +2126,7 @@ function exportConsolidadoWorkbook() {
   const scope = [
     state.selectedDre === "__all__" ? "todas-dres" : unformatLabel(state.selectedDre),
     state.selectedSchool === "__all__" ? "todas-escolas" : unformatLabel(getSchoolLabel()),
+    unformatLabel(getEvaluationConfig().label),
     `${state.selectedAno}-ano`,
   ].join("_");
   XLSX.writeFile(wb, `consolidado-sondagem_${scope}.xlsx`);

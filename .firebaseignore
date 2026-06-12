@@ -1,0 +1,9 @@
+firebase.json
+.firebaserc
+.firebaseignore
+venv/
+**/*.py
+**/*.exe
+**/*.bat
+**/*.cmd
+iniciar.bat

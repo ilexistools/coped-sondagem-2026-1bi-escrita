@@ -2,3 +2,4 @@ venv/
 extracao/
 __pycache__/
 *.pyc
+.firebase/
