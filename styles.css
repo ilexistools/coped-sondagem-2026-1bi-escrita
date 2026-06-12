@@ -197,7 +197,8 @@ h2 {
 }
 
 .app-layout.sidebar--hidden .sidebar-title,
-.app-layout.sidebar--hidden .sidebar label {
+.app-layout.sidebar--hidden .sidebar label,
+.app-layout.sidebar--hidden .filter-static {
   display: none;
 }
 
@@ -240,6 +241,36 @@ h2 {
 .sidebar select {
   width: 100%;
   min-width: 0;
+}
+
+.filter-static {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 11px;
+  border: 1px solid #ccd8e8;
+  border-radius: 7px;
+  background: #f8fbff;
+}
+
+.filter-static span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.filter-static strong {
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.filter-static small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 label {
@@ -376,6 +407,16 @@ main {
   display: block;
   margin-top: 8px;
   color: var(--muted);
+}
+
+.kpi-action {
+  border-color: #b9d2ff;
+  background: #f7fbff;
+}
+
+.kpi-action .text-action {
+  width: fit-content;
+  margin-top: 10px;
 }
 
 .dashboard-grid {
@@ -1244,6 +1285,63 @@ tbody tr:hover {
 
 @media (max-width: 760px) {
   .consolidado-charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Consolidado donut ---- */
+.donut-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 300px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+
+.donut-layout svg {
+  width: 100%;
+  max-width: 300px;
+  height: auto;
+}
+
+.donut-center-value {
+  fill: var(--ink);
+  font-size: 1.45rem;
+  font-weight: 900;
+}
+
+.donut-center-label {
+  fill: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.donut-legend {
+  display: grid;
+  gap: 8px;
+}
+
+.donut-legend-item {
+  display: grid;
+  grid-template-columns: 14px minmax(42px, 1fr) auto auto;
+  gap: 7px;
+  align-items: center;
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.donut-legend-item span:not(.legend-swatch) {
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.donut-legend-item small {
+  color: var(--muted);
+  font-weight: 750;
+}
+
+@media (max-width: 560px) {
+  .donut-layout {
     grid-template-columns: 1fr;
   }
 }

@@ -34,7 +34,7 @@ const state = {
   anos: [],
   selectedDre: "__all__",
   selectedSchool: "__all__",
-  selectedAno: "__all__",
+  selectedAno: "1",
   scatterXLevel: "PS",
   scatterYLevel: "A",
   dreRankingSortBy: "avgGain",
@@ -53,12 +53,14 @@ const state = {
   consolidadoSchoolSortBy: "A",
   consolidadoSchoolSortDir: "desc",
   consolidadoChartPeriod: "final",
+  consolidadoDonutPeriod: "final",
 };
 
 const formatPct = (value) => `${Math.round(value * 100)}%`;
 const formatNumber = (value) => new Intl.NumberFormat("pt-BR").format(value);
 const formatDecimal = (value) =>
   new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+const unformatLabel = (value) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
   "&": "&amp;",
   "<": "&lt;",
@@ -157,8 +159,12 @@ function buildStudentRecords(rows) {
   const records = Array.from(byStudent.values()).map((record) => {
     const hasPair = Boolean(record.initial && record.final);
     const gain = hasPair ? LEVEL_SCORE[record.final] - LEVEL_SCORE[record.initial] : null;
+    const missingInitial = !record.initial;
+    const missingFinal = !record.final;
     return {
       ...record,
+      missingInitial,
+      missingFinal,
       hasPair,
       gain,
       status: hasPair ? classifyGain(gain) : "Sem par válido",
@@ -522,13 +528,41 @@ function consolidadoLevelStats(records, field) {
   return { counts, pct, total: records.length };
 }
 
+function missingStats(records) {
+  const total = records.length || 1;
+  const missingInitial = records.filter((record) => record.missingInitial).length;
+  const missingFinal = records.filter((record) => record.missingFinal).length;
+  const missingPair = records.filter((record) => !record.hasPair).length;
+  const paired = records.filter((record) => record.hasPair).length;
+  return {
+    total: records.length,
+    paired,
+    missingInitial,
+    missingFinal,
+    missingPair,
+    pairedPct: paired / total,
+    missingInitialPct: missingInitial / total,
+    missingFinalPct: missingFinal / total,
+    missingPairPct: missingPair / total,
+  };
+}
+
+function getScopeTitle() {
+  const school = getSchoolLabel();
+  const year = `${state.selectedAno}º ano`;
+  return state.selectedSchool === "__all__" ? `${school} · ${year}` : `${school} · ${year}`;
+}
+
 function renderConsolidadoKpis(records) {
   const initial = consolidadoLevelStats(records, "initial");
   const fin = consolidadoLevelStats(records, "final");
+  const missing = missingStats(records);
   const items = [
     ["Total de alunos", formatNumber(records.length), "no recorte selecionado", "Total de alunos registrados no recorte, incluindo aqueles sem par válido."],
+    ["Com par válido", formatPct(missing.pairedPct), `${formatNumber(missing.paired)} alunos`, "Alunos com hipótese válida na avaliação inicial e no 1º bimestre."],
     ["Alfabéticos – Inicial", formatPct(initial.pct.A), `${formatNumber(initial.counts.A)} alunos`, "Percentual de alunos na hipótese A na avaliação inicial, sobre todos os alunos do recorte."],
     ["Alfabéticos – 1ºBI", formatPct(fin.pct.A), `${formatNumber(fin.counts.A)} alunos`, "Percentual de alunos na hipótese A no 1º bimestre, sobre todos os alunos do recorte."],
+    ["Sem registro – Inicial", formatPct(missing.missingInitialPct), `${formatNumber(missing.missingInitial)} alunos`, "Alunos sem hipótese registrada ou inválida na avaliação inicial."],
     ["Sem registro – 1ºBI", formatPct(fin.pct.sem), `${formatNumber(fin.counts.sem)} alunos`, "Alunos sem hipótese registrada ou inválida no 1º bimestre."],
   ];
   document.querySelector("#consolidado-kpis").innerHTML = items.map(([label, value, note, tooltip]) => `
@@ -537,7 +571,14 @@ function renderConsolidadoKpis(records) {
       <strong>${value}</strong>
       <small>${note}</small>
     </article>
-  `).join("");
+  `).join("") + `
+    <article class="kpi kpi-action">
+      <span>Exportação</span>
+      <strong>XLSX</strong>
+      <small>Resumo, distribuição, escolas, turmas, alunos e sem dado.</small>
+      <button id="exportConsolidadoWorkbook" class="text-action" type="button">Baixar consolidado XLSX</button>
+    </article>
+  `;
 }
 
 function renderConsolidadoHeatmap(records) {
@@ -730,6 +771,99 @@ function renderConsolidadoDesempenho(records) {
   `;
 }
 
+function polarToCartesian(cx, cy, r, angleDeg) {
+  const angle = (angleDeg - 90) * Math.PI / 180;
+  return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+}
+
+function donutArcPath(cx, cy, outerR, innerR, startAngle, endAngle) {
+  const fullCircle = endAngle - startAngle >= 359.99;
+  if (fullCircle) {
+    return [
+      `M ${cx} ${cy - outerR}`,
+      `A ${outerR} ${outerR} 0 1 1 ${cx - 0.01} ${cy - outerR}`,
+      `A ${outerR} ${outerR} 0 1 1 ${cx} ${cy - outerR}`,
+      `M ${cx} ${cy - innerR}`,
+      `A ${innerR} ${innerR} 0 1 0 ${cx - 0.01} ${cy - innerR}`,
+      `A ${innerR} ${innerR} 0 1 0 ${cx} ${cy - innerR}`,
+      "Z",
+    ].join(" ");
+  }
+  const startOuter = polarToCartesian(cx, cy, outerR, endAngle);
+  const endOuter = polarToCartesian(cx, cy, outerR, startAngle);
+  const startInner = polarToCartesian(cx, cy, innerR, startAngle);
+  const endInner = polarToCartesian(cx, cy, innerR, endAngle);
+  const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+  return [
+    `M ${startOuter.x} ${startOuter.y}`,
+    `A ${outerR} ${outerR} 0 ${largeArc} 0 ${endOuter.x} ${endOuter.y}`,
+    `L ${startInner.x} ${startInner.y}`,
+    `A ${innerR} ${innerR} 0 ${largeArc} 1 ${endInner.x} ${endInner.y}`,
+    "Z",
+  ].join(" ");
+}
+
+function renderConsolidadoDonut(records) {
+  const field = state.consolidadoDonutPeriod === "initial" ? "initial" : "final";
+  const stats = consolidadoLevelStats(records, field);
+  const chartLevels = [...SANKEY_LEVELS, "sem"];
+  const total = Math.max(1, records.length);
+  let angle = 0;
+  const slices = chartLevels.map((level) => {
+    const count = stats.counts[level] ?? 0;
+    const pct = count / total;
+    const start = angle;
+    const end = angle + pct * 360;
+    angle = end;
+    return { level, count, pct, start, end };
+  }).filter((slice) => slice.count > 0);
+
+  const cx = 150;
+  const cy = 142;
+  const outerR = 104;
+  const innerR = 58;
+  const periodLabel = state.consolidadoDonutPeriod === "initial" ? "Inicial" : "1º bimestre";
+  const label = getScopeTitle();
+  const paths = slices.map((slice) => {
+    const color = LEVEL_COLORS[slice.level] || "#8a94a6";
+    const name = slice.level === "sem" ? "Sem dado" : slice.level;
+    return `
+      <path d="${donutArcPath(cx, cy, outerR, innerR, slice.start, slice.end)}" fill="${color}" opacity="0.92">
+        <title>${name}: ${formatNumber(slice.count)} alunos (${formatPct(slice.pct)})</title>
+      </path>
+    `;
+  }).join("");
+  const legend = chartLevels.map((level) => {
+    const color = LEVEL_COLORS[level] || "#8a94a6";
+    const name = level === "sem" ? "Sem dado" : level;
+    const count = stats.counts[level] ?? 0;
+    const pct = stats.pct[level] ?? 0;
+    return `
+      <div class="donut-legend-item">
+        <span class="legend-swatch" style="background:${color}"></span>
+        <strong>${name}</strong>
+        <span>${formatPct(pct)}</span>
+        <small>${formatNumber(count)}</small>
+      </div>
+    `;
+  }).join("");
+
+  document.querySelector("#consolidado-donut").innerHTML = `
+    <div class="donut-layout">
+      <svg viewBox="0 0 300 284" role="img" aria-label="Distribuição geral ${periodLabel}">
+        ${paths || `<circle cx="${cx}" cy="${cy}" r="${outerR}" fill="#dce3ee"></circle>`}
+        <circle cx="${cx}" cy="${cy}" r="${innerR}" fill="#ffffff"></circle>
+        <text class="donut-center-value" x="${cx}" y="${cy - 4}" text-anchor="middle">${formatNumber(records.length)}</text>
+        <text class="donut-center-label" x="${cx}" y="${cy + 18}" text-anchor="middle">alunos</text>
+      </svg>
+      <div>
+        <p class="table-note">${escapeHtml(label)} · ${periodLabel}</p>
+        <div class="donut-legend">${legend}</div>
+      </div>
+    </div>
+  `;
+}
+
 function renderConsolidadoParticipacao(records) {
   const field = state.consolidadoChartPeriod === "initial" ? "initial" : "final";
   const stats = consolidadoLevelStats(records, field);
@@ -781,6 +915,7 @@ function renderConsolidado() {
   renderFilterSummary(records);
   renderConsolidadoKpis(records);
   renderConsolidadoDesempenho(records);
+  renderConsolidadoDonut(records);
   renderConsolidadoParticipacao(records);
   renderConsolidadoHeatmap(records);
   renderConsolidadoDreChart(compRecords);
@@ -894,6 +1029,8 @@ function classStats(records) {
     const paired = group.records.filter((record) => record.hasPair);
     const total = group.records.length;
     const pairedTotal = paired.length || 1;
+    const missingInitial = group.records.filter((record) => record.missingInitial).length;
+    const missingFinal = group.records.filter((record) => record.missingFinal).length;
     const finalAlphaCount = paired.filter((record) => record.final === "A").length;
     const initialAlphaCount = paired.filter((record) => record.initial === "A").length;
     const improved = paired.filter((record) => record.gain > 0).length;
@@ -904,6 +1041,8 @@ function classStats(records) {
       ...group,
       total,
       pairedCount: paired.length,
+      missingInitial,
+      missingFinal,
       missingPair: total - paired.length,
       finalAlphaCount,
       alphaDeltaCount: finalAlphaCount - initialAlphaCount,
@@ -941,6 +1080,8 @@ function renderClassesTable(records) {
         <td><strong>${escapeHtml(group.className)}</strong></td>
         <td>${formatNumber(group.total)}</td>
         <td>${formatNumber(group.pairedCount)} <small>${formatPct(group.pairedCount / Math.max(1, group.total))}</small></td>
+        <td>${formatNumber(group.missingInitial)} <small>${formatPct(group.missingInitial / Math.max(1, group.total))}</small></td>
+        <td>${formatNumber(group.missingFinal)} <small>${formatPct(group.missingFinal / Math.max(1, group.total))}</small></td>
         <td>${formatNumber(group.missingPair)}</td>
         <td>${formatPct(group.finalAlphaPct)} <small>${formatNumber(group.finalAlphaCount)}</small></td>
         <td>${formatPct(group.improvedPct)}</td>
@@ -952,7 +1093,7 @@ function renderClassesTable(records) {
   }).join("");
 
   document.querySelector("#classesTable tbody").innerHTML = rows || `
-    <tr><td colspan="11" class="empty-table">Nenhuma turma encontrada para o recorte atual.</td></tr>
+    <tr><td colspan="13" class="empty-table">Nenhuma turma encontrada para o recorte atual.</td></tr>
   `;
 }
 
@@ -1179,7 +1320,7 @@ function renderFilterSummary(records) {
   const filters = [
     ["DRE", state.selectedDre === "__all__" ? "Todas as DREs" : state.selectedDre],
     ["Escola", getSchoolLabel()],
-    ["Ano", state.selectedAno === "__all__" ? "Todos os anos" : `${state.selectedAno}º ano`],
+    ["Ano", `${state.selectedAno}º ano`],
     ["Alunos no recorte", formatNumber(records.length)],
   ];
 
@@ -1202,16 +1343,12 @@ function renderFilterSummary(records) {
 function populateFilters() {
   const dres = Array.from(new Set(state.records.map((r) => r.dre).filter(Boolean)))
     .sort((a, b) => a.localeCompare(b, "pt-BR"));
-  const anos = Array.from(new Set(state.records.map((r) => r.ano).filter(Boolean)))
-    .sort((a, b) => Number(a) - Number(b) || String(a).localeCompare(String(b), "pt-BR"));
+  const anos = ["1"];
   state.dres = dres;
   state.anos = anos;
   document.querySelector("#dreFilter").innerHTML =
     `<option value="__all__">Todas as DREs</option>` +
     dres.map((dre) => `<option value="${escapeHtml(dre)}">${escapeHtml(dre)}</option>`).join("");
-  document.querySelector("#anoFilter").innerHTML =
-    `<option value="__all__">Todos os anos</option>` +
-    anos.map((ano) => `<option value="${escapeHtml(ano)}">${escapeHtml(ano)}º ano</option>`).join("");
   populateSchoolFilter();
 }
 
@@ -1263,11 +1400,6 @@ async function init() {
 
   document.querySelector("#dreFilter").addEventListener("change", (event) => {
     state.selectedDre = event.target.value;
-    populateSchoolFilter();
-    render();
-  });
-  document.querySelector("#anoFilter").addEventListener("change", (event) => {
-    state.selectedAno = event.target.value;
     populateSchoolFilter();
     render();
   });
@@ -1395,6 +1527,12 @@ async function init() {
       renderConsolidadoParticipacao(records);
     }
   });
+  document.querySelector("#consolidadoDonutPeriod").addEventListener("change", (e) => {
+    state.consolidadoDonutPeriod = e.target.value;
+    if (state.viewMode === "consolidado") {
+      renderConsolidadoDonut(filterRecords(state.records, { includeMissing: true }));
+    }
+  });
   document.querySelector("#consolidadoDrePeriod").addEventListener("change", (e) => {
     state.consolidadoDrePeriod = e.target.value;
     if (state.viewMode === "consolidado") {
@@ -1458,6 +1596,9 @@ async function init() {
   document.querySelectorAll(".table-dl-btn").forEach((btn) => {
     btn.addEventListener("click", () => exportTableXlsx(btn.dataset.table, btn.dataset.filename, btn.dataset.skipCol));
   });
+  document.addEventListener("click", (event) => {
+    if (event.target.closest("#exportConsolidadoWorkbook")) exportConsolidadoWorkbook();
+  });
 
   const copyIcon = `<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="9" height="9" rx="1.5"/><path d="M5 3.5A1.5 1.5 0 0 1 6.5 2H13a1.5 1.5 0 0 1 1.5 1.5v6.5A1.5 1.5 0 0 1 13 11.5"/></svg>`;
   const copiedIcon = `<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8.5l3.5 3.5 7-7"/></svg>`;
@@ -1501,6 +1642,199 @@ async function init() {
   render();
 }
 
+function parseExportValue(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  const pctMatch = text.match(/^([+-]?\d+(?:,\d+)?)%$/);
+  if (pctMatch) return Number(pctMatch[1].replace(",", ".")) / 100;
+  const numberMatch = text.match(/^[+-]?\d{1,3}(?:\.\d{3})*(?:,\d+)?$|^[+-]?\d+(?:,\d+)?$/);
+  if (numberMatch) return Number(text.replace(/\./g, "").replace(",", "."));
+  return text;
+}
+
+function makeSheet(rows) {
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const range = XLSX.utils.decode_range(ws["!ref"] || "A1:A1");
+  const widths = [];
+  rows.forEach((row) => {
+    row.forEach((cell, index) => {
+      widths[index] = Math.max(widths[index] || 8, Math.min(42, String(cell ?? "").length + 2));
+    });
+  });
+  ws["!cols"] = widths.map((wch) => ({ wch }));
+  for (let row = range.s.r + 1; row <= range.e.r; row++) {
+    for (let col = range.s.c; col <= range.e.c; col++) {
+      const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
+      const cell = ws[cellRef];
+      if (cell?.t === "n" && Math.abs(cell.v) <= 1 && String(rows[0]?.[col] || "").includes("%")) {
+        cell.z = "0%";
+      }
+    }
+  }
+  return ws;
+}
+
+function getPeriodLabel(period) {
+  return period === "initial" ? "Inicial" : "1º bimestre";
+}
+
+function distributionRows(records) {
+  const rows = [["Período", "Hipótese", "Alunos", "%"]];
+  [
+    ["initial", consolidadoLevelStats(records, "initial")],
+    ["final", consolidadoLevelStats(records, "final")],
+  ].forEach(([period, stats]) => {
+    [...LEVELS, "sem"].forEach((level) => {
+      rows.push([
+        getPeriodLabel(period),
+        level === "sem" ? "Sem dado" : level,
+        stats.counts[level] ?? 0,
+        stats.pct[level] ?? 0,
+      ]);
+    });
+  });
+  return rows;
+}
+
+function schoolDistributionRows(records, period) {
+  const field = period === "initial" ? "initial" : "final";
+  const rows = [["Escola", "Código EOL Escola", "Total", "PS", "% PS", "SSVC", "% SSVC", "SCVC", "% SCVC", "SA", "% SA", "A", "% A", "Sem dado", "% Sem dado"]];
+  const grouped = new Map();
+  records.forEach((record) => {
+    if (!record.schoolCode) return;
+    if (!grouped.has(record.schoolCode)) grouped.set(record.schoolCode, { schoolCode: record.schoolCode, school: record.school, records: [] });
+    grouped.get(record.schoolCode).records.push(record);
+  });
+  Array.from(grouped.values())
+    .sort((a, b) => a.school.localeCompare(b.school, "pt-BR"))
+    .forEach((group) => {
+      const stats = consolidadoLevelStats(group.records, field);
+      rows.push([
+        group.school,
+        group.schoolCode,
+        stats.total,
+        stats.counts.PS,
+        stats.pct.PS,
+        stats.counts.SSVC,
+        stats.pct.SSVC,
+        stats.counts.SCVC,
+        stats.pct.SCVC,
+        stats.counts.SA,
+        stats.pct.SA,
+        stats.counts.A,
+        stats.pct.A,
+        stats.counts.sem,
+        stats.pct.sem,
+      ]);
+    });
+  return rows;
+}
+
+function classExportRows(records) {
+  const rows = [["DRE", "Escola", "Código EOL Escola", "Turma", "Total", "Par válido", "% Par válido", "Sem dado Inicial", "% Sem dado Inicial", "Sem dado 1ºBI", "% Sem dado 1ºBI", "Sem par", "% Sem par", "Alfabéticos 1ºBI", "% Alfabéticos 1ºBI", "Índice de Evolução"]];
+  sortClassStats(classStats(records), "school", "asc").forEach((group) => {
+    const dre = group.records[0]?.dre || "";
+    const total = Math.max(1, group.total);
+    rows.push([
+      dre,
+      group.school,
+      group.schoolCode,
+      group.className,
+      group.total,
+      group.pairedCount,
+      group.pairedCount / total,
+      group.missingInitial,
+      group.missingInitial / total,
+      group.missingFinal,
+      group.missingFinal / total,
+      group.missingPair,
+      group.missingPair / total,
+      group.finalAlphaCount,
+      group.finalAlphaPct,
+      group.avgGain,
+    ]);
+  });
+  return rows;
+}
+
+function studentExportRows(records) {
+  const rows = [["DRE", "Escola", "Código EOL Escola", "Ano", "Turma", "Aluno", "Código EOL Estudante", "Inicial", "1º bimestre", "Ganho", "Situação", "Sem dado Inicial", "Sem dado 1ºBI"]];
+  records
+    .slice()
+    .sort((a, b) => a.school.localeCompare(b.school, "pt-BR") || a.className.localeCompare(b.className, "pt-BR", { numeric: true }) || getStudentDisplayName(a).localeCompare(getStudentDisplayName(b), "pt-BR"))
+    .forEach((record) => {
+      rows.push([
+        record.dre,
+        record.school,
+        record.schoolCode,
+        record.ano,
+        record.className,
+        getStudentDisplayName(record),
+        record.id,
+        record.initial || "Sem dado",
+        record.final || "Sem dado",
+        record.gain ?? "",
+        record.status,
+        record.missingInitial ? "Sim" : "Não",
+        record.missingFinal ? "Sim" : "Não",
+      ]);
+    });
+  return rows;
+}
+
+function missingExportRows(records) {
+  return studentExportRows(records.filter((record) => !record.hasPair));
+}
+
+function exportConsolidadoWorkbook() {
+  if (typeof XLSX === "undefined") {
+    alert("Biblioteca de exportação não disponível.");
+    return;
+  }
+  const records = filterRecords(state.records, { includeMissing: true });
+  const comparisonRecords = filterRecords(state.records, { includeMissing: true, includeSchool: false });
+  const missing = missingStats(records);
+  const initial = consolidadoLevelStats(records, "initial");
+  const fin = consolidadoLevelStats(records, "final");
+  const wb = XLSX.utils.book_new();
+  const summaryRows = [
+    ["Campo", "Valor"],
+    ["DRE", state.selectedDre === "__all__" ? "Todas as DREs" : state.selectedDre],
+    ["Escola", getSchoolLabel()],
+    ["Ano", `${state.selectedAno}º ano`],
+    ["Total de alunos", records.length],
+    ["Com par válido", missing.paired],
+    ["% com par válido", missing.pairedPct],
+    ["Sem dado Inicial", missing.missingInitial],
+    ["% sem dado Inicial", missing.missingInitialPct],
+    ["Sem dado 1ºBI", missing.missingFinal],
+    ["% sem dado 1ºBI", missing.missingFinalPct],
+    ["Sem par", missing.missingPair],
+    ["% sem par", missing.missingPairPct],
+    ["Alfabéticos Inicial", initial.counts.A],
+    ["% alfabéticos Inicial", initial.pct.A],
+    ["Alfabéticos 1ºBI", fin.counts.A],
+    ["% alfabéticos 1ºBI", fin.pct.A],
+  ];
+  [
+    ["Resumo", summaryRows],
+    ["Distribuicao", distributionRows(records)],
+    ["Escolas Final", schoolDistributionRows(comparisonRecords, "final")],
+    ["Escolas Inicial", schoolDistributionRows(comparisonRecords, "initial")],
+    ["Turmas", classExportRows(records)],
+    ["Alunos", studentExportRows(records)],
+    ["Sem dado", missingExportRows(records)],
+  ].forEach(([name, rows]) => {
+    XLSX.utils.book_append_sheet(wb, makeSheet(rows), name);
+  });
+  const scope = [
+    state.selectedDre === "__all__" ? "todas-dres" : unformatLabel(state.selectedDre),
+    state.selectedSchool === "__all__" ? "todas-escolas" : unformatLabel(getSchoolLabel()),
+    `${state.selectedAno}-ano`,
+  ].join("_");
+  XLSX.writeFile(wb, `consolidado-sondagem_${scope}.xlsx`);
+}
+
 function exportTableXlsx(tableId, filename, skipColStr) {
   if (typeof XLSX === "undefined") {
     alert("Biblioteca de exportação não disponível.");
@@ -1509,21 +1843,15 @@ function exportTableXlsx(tableId, filename, skipColStr) {
   const table = document.getElementById(tableId);
   if (!table) return;
   const skipCol = skipColStr !== undefined ? parseInt(skipColStr, 10) : -1;
-  if (skipCol < 0) {
-    const wb = XLSX.utils.table_to_book(table, { sheet: "Dados" });
-    XLSX.writeFile(wb, filename + ".xlsx");
-    return;
-  }
   const rows = [];
   table.querySelectorAll("tr").forEach((tr) => {
     const cells = [...tr.querySelectorAll("th, td")]
       .filter((_, i) => i !== skipCol)
-      .map((cell) => cell.innerText.trim());
-    rows.push(cells);
+      .map((cell) => parseExportValue(cell.innerText.trim().replace(/\s+/g, " ")));
+    if (cells.length) rows.push(cells);
   });
-  const ws = XLSX.utils.aoa_to_sheet(rows);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Dados");
+  XLSX.utils.book_append_sheet(wb, makeSheet(rows), "Dados");
   XLSX.writeFile(wb, filename + ".xlsx");
 }
 

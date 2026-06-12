@@ -9,8 +9,8 @@
   <body>
     <header class="topbar">
       <div>
-        <p class="eyebrow">Sondagem de Língua Portuguesa - Escrita - 1º BI 2026</p>
-        <h1>Resultados de Sondagem</h1>
+        <p class="eyebrow">Sondagem de Língua Portuguesa - 1º BI 2026</p>
+        <h1>Sistema de Escrita</h1>
       </div>
     </header>
 
@@ -32,12 +32,11 @@
             <option value="__all__">Todas as escolas</option>
           </select>
         </label>
-        <label>
-          Ano
-          <select id="anoFilter">
-            <option value="__all__">Todos os anos</option>
-          </select>
-        </label>
+        <div class="filter-static" aria-label="Ano avaliado">
+          <span>Ano avaliado</span>
+          <strong>1º ano</strong>
+          <small>Sistema de Escrita usa apenas dados do 1º ano.</small>
+        </div>
         <div class="view-switcher" role="group" aria-label="Modo de visualização">
           <button id="switchEvolucao" class="view-btn active" type="button">Evolução</button>
           <button id="switchConsolidado" class="view-btn" type="button">Consolidado</button>
@@ -268,6 +267,8 @@
                 <th>Turma</th>
                 <th>Alunos</th>
                 <th>Par válido</th>
+                <th>Sem dado Inicial</th>
+                <th>Sem dado 1ºBI</th>
                 <th>Sem par</th>
                 <th>Alfabéticos (1ºBI)</th>
                 <th>Melhoraram</th>
@@ -363,6 +364,24 @@
               </div>
             </div>
             <div id="consolidado-desempenho"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Escola inteira</p>
+                <h2>Distribuição geral</h2>
+              </div>
+              <div class="ranking-controls">
+                <label>
+                  Período
+                  <select id="consolidadoDonutPeriod">
+                    <option value="initial">Inicial</option>
+                    <option value="final" selected>1º bimestre</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div id="consolidado-donut"></div>
           </article>
           <article class="panel">
             <div class="panel-head">

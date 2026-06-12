@@ -51,9 +51,9 @@ Para comparar a evolução, o painel agrupa os registros por `id` (`Código EOL 
 - `Inicial`
 - `1° bimestre`
 
-Somente estudantes com hipótese válida nos dois momentos entram nos cálculos de evolução. Respostas vazias, `Sem preenchimento` ou valores fora da escala são desconsiderados para evolução individual. O painel informa em um card próprio quantos estudantes ficaram sem par completo.
+Somente estudantes com hipótese válida nos dois momentos entram nos cálculos de evolução. Respostas vazias, `Sem preenchimento` ou valores fora da escala são tratadas como `Sem dado` e ficam fora da evolução individual, mas permanecem nas visões consolidadas. O painel diferencia ausência na Inicial, ausência no 1º bimestre e ausência de par completo.
 
-O arquivo consolidado contém registros de múltiplas DREs. Por isso, o painel carrega a base completa e aplica os filtros de DRE, Ano e Escola diretamente na interface. O ranking e o gráfico de comparação entre escolas respeitam o recorte de DRE/Ano, mas continuam mostrando todas as escolas desse recorte mesmo quando uma escola específica está selecionada, destacando a escola filtrada.
+O arquivo consolidado contém registros de múltiplas DREs. Para Sistema de Escrita, o painel fixa o recorte em `1º ano` e aplica os filtros de DRE e Escola diretamente na interface. O ranking e o gráfico de comparação entre escolas respeitam o recorte de DRE/1º ano, mas continuam mostrando todas as escolas desse recorte mesmo quando uma escola específica está selecionada, destacando a escola filtrada.
 
 Para reduzir exposição de dados pessoais, o JSON público não armazena o nome completo do estudante. O script `gera_json.py` grava apenas o primeiro nome no campo `n`; a interface combina esse primeiro nome ao código EOL do estudante no formato `PrimeiroNome (CódigoEOL)`.
 
@@ -111,6 +111,21 @@ O painel calcula, para a DRE ou para a escola filtrada:
 Uma faixa acima dos cards mostra explicitamente o recorte aplicado no momento: DRE, escola, ano e quantidade total de alunos no recorte.
 
 Cards no topo consolidam a situação geral da DRE, ano ou escola selecionada.
+
+### Visão consolidada
+
+A chave `Consolidado` mantém todos os alunos do recorte, inclusive estudantes sem dado válido em um dos períodos. Essa visão é indicada para ler a escola, a DRE ou a rede no recorte fixo de 1º ano, sem restringir a análise apenas aos alunos com par válido.
+
+A barra de filtros exibe `Ano avaliado: 1º ano` como informação de escopo, sem seletor, pois os dados de Sistema de Escrita usados neste painel são apenas do primeiro ano.
+
+A visão consolidada inclui:
+
+- KPIs de total de alunos, par válido, alfabéticos por período e sem registro por período.
+- Gráfico de rosca com distribuição geral por hipótese e `Sem dado`.
+- Gráfico de participação entre preenchidos e sem dado.
+- Mapa de calor com distribuição por período.
+- Comparação por DRE, quando o recorte está em todas as DREs e todas as escolas.
+- Ranking de escolas por distribuição de hipóteses.
 
 ### Movimentação geral
 
@@ -170,7 +185,7 @@ Mostra a proporção de estudantes em cada classificação: alta evolução, evo
 
 ### Alunos que pedem atenção
 
-Antes da lista de alunos, o painel exibe uma tabela de turmas do recorte atual. Cada linha mostra escola, turma, total de alunos, quantidade e percentual com par válido, sem par válido, alfabéticos no 1º bimestre, evolução e Índice de Evolução. O botão de ícone abre diretamente a visualização da sala daquela turma em uma guia na própria página.
+Antes da lista de alunos, o painel exibe uma tabela de turmas do recorte atual. Cada linha mostra escola, turma, total de alunos, quantidade e percentual com par válido, sem dado na Inicial, sem dado no 1º bimestre, sem par válido, alfabéticos no 1º bimestre, evolução e Índice de Evolução. O botão de ícone abre diretamente a visualização da sala daquela turma em uma guia na própria página.
 
 Tabela com estudantes filtráveis por DRE, ano, escola e busca textual. A lista prioriza estudantes com baixa, estabilidade ou alta evolução, usando o ganho entre a hipótese inicial e a do 1º bimestre.
 
@@ -185,9 +200,22 @@ A coluna `Turma` é clicável. Ao clicar, abre uma guia na área `Salas abertas`
 ## Filtros disponíveis
 
 - DRE.
-- Ano.
-- Escola, atualizada conforme DRE e Ano selecionados.
+- Ano avaliado: `1º ano`, exibido como informação fixa de escopo.
+- Escola, atualizada conforme DRE selecionada e o recorte fixo de 1º ano.
 - Busca por aluno ou escola na tabela de acompanhamento.
+
+## Exportações
+
+Os botões de download das tabelas continuam exportando a tabela visível em `.xlsx`, removendo colunas de ação quando necessário.
+
+Na visão `Consolidado`, o card final dos indicadores gerais traz o botão `Baixar consolidado XLSX`, que gera uma pasta de trabalho com múltiplas abas:
+
+- `Resumo`: filtros aplicados, totais, preenchimento e alfabéticos.
+- `Distribuicao`: hipóteses por período, incluindo `Sem dado`.
+- `Escolas Final` e `Escolas Inicial`: distribuição por escola.
+- `Turmas`: total, par válido, ausências por período, sem par e evolução.
+- `Alunos`: lista de alunos do recorte.
+- `Sem dado`: alunos sem par válido.
 
 ## Validação realizada
 
@@ -198,7 +226,10 @@ Foram feitas as seguintes verificações:
 - Renderização dos 8 KPIs.
 - Renderização do fluxo, heatmap, ranking, distribuição, velocidade e tabela de alunos.
 - Clique em escola no ranking filtrando os indicadores.
-- Filtros de DRE, Ano e Escola atualizando indicadores, gráficos e tabelas.
+- Filtros de DRE e Escola atualizando indicadores, gráficos e tabelas, com Ano avaliado informado como `1º ano`.
+- Visão Consolidado com gráfico de rosca e participação no recorte de 1º ano.
+- Colunas de sem dado na Inicial, sem dado no 1º bimestre e sem par na tabela de turmas.
+- Geração do workbook consolidado em `.xlsx` validada até o ponto permitido pelo navegador interno; downloads não são suportados no Browser da Codex, mas não houve erros de aplicação.
 - Ausência de erros de console no navegador.
 - Checagem responsiva em largura mobile sem rolagem horizontal indevida.
 
