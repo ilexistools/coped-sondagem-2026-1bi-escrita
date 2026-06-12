@@ -1,6 +1,6 @@
-# BI Sondagem de Escrita - 1º Ano
+# BI Sondagem de Língua Portuguesa - 1º BI 2026
 
-Este projeto contém um MVP de página BI para acompanhar a evolução dos estudantes nas avaliações de escrita da sondagem inicial e do 1º bimestre por escola e por aluno.
+Este projeto contém uma página BI para acompanhar resultados da sondagem inicial e do 1º bimestre em Língua Portuguesa, com recortes de Escrita e Leitura por DRE, escola, turma e estudante/resposta.
 
 ## Arquivos principais
 
@@ -8,7 +8,7 @@ Este projeto contém um MVP de página BI para acompanhar a evolução dos estud
 - `styles.css`: estilos, responsividade e organização visual dos painéis.
 - `dashboard.js`: carregamento do JSON, transformação dos dados, cálculos dos indicadores e renderização dos gráficos/tabelas.
 - `gera_json.py`: script de geração da base compacta a partir da extração original.
-- `data/lp_avaliacoes_escrita.json`: base consolidada multiavaliação usada pelo painel.
+- `data/lp_avaliacoes_escrita.json`: base consolidada multiavaliação usada pelo painel, incluindo Escrita e Leitura.
 - `data/lp_sistema_de_escrita.json`: base legada do recorte Sistema de escrita/1º ano.
 - `vendor/`: bibliotecas locais usadas para exportar tabelas e copiar gráficos como imagem.
 - `tsvs/dre-bt_lp_escrita_1_ano.tsv`: base TSV original de referência do MVP inicial.
@@ -38,36 +38,47 @@ Esquema atual:
 | Chave | Campo |
 | --- | --- |
 | `av` | Tipo de avaliação |
+| `q` | Questão avaliada |
 | `d` | Nome DRE |
 | `ec` | Código EOL Escola |
 | `e` | Nome Escola |
 | `t` | Nome Turma |
 | `id` | Código EOL Estudante |
-| `n` | Primeiro nome do estudante |
+| `n` | Inicial do nome do estudante |
 | `r` | Resposta |
 | `a` | Ano |
 | `b` | Bimestre |
 
 Tipos de avaliação:
 
-| Código | Proficiência | Questão | Ano |
+| Código | Proficiência | Questões | Ano |
 | --- | --- | --- | --- |
 | `se1` | Escrita | Sistema de escrita | 1 |
 | `esc2` | Escrita | Escrita | 2 |
 | `pt3` | Escrita | Produção de Texto | 3 |
+| `lei1` | Leitura | Localização | 1 |
+| `lei2` | Leitura | Localização; Inferência | 2 |
+| `lei3` | Leitura | Localização; Inferência; Apreciação e Réplica | 3 |
 
-Para comparar a evolução, o painel agrupa os registros por `id` (`Código EOL Estudante`) e monta um par de valores:
+Para comparar a evolução, o painel agrupa os registros por estudante e questão, montando um par de valores:
 
 - `Inicial`
 - `1° bimestre`
 
-Somente estudantes com hipótese válida nos dois momentos entram nos cálculos de evolução. Respostas vazias, `Sem preenchimento` ou valores fora da escala são tratadas como `Sem dado` e ficam fora da evolução individual, mas permanecem nas visões consolidadas. O painel diferencia ausência na Inicial, ausência no 1º bimestre e ausência de par completo.
+Nos recortes de Escrita, somente estudantes com hipótese/categoria válida nos dois momentos entram nos cálculos de evolução. Respostas vazias, `Sem preenchimento` ou valores fora da escala são tratadas como `Sem dado` e ficam fora da evolução individual, mas permanecem nas visões consolidadas. O painel diferencia ausência na Inicial, ausência no 1º bimestre e ausência de par completo.
 
-O arquivo consolidado contém registros de múltiplas DREs e dos três recortes de avaliação. A interface aplica os filtros de DRE, Escola e Tipo de avaliação diretamente na página. Ao selecionar o tipo de avaliação, o painel atualiza automaticamente o Ano avaliado:
+Nos recortes de Leitura, as categorias válidas são `Adequada`, `Inadequada`, `Não respondeu` e `Sem preenchimento`. Respostas vazias da extração são exibidas como `Sem preenchimento`, seguindo a legenda visual de referência.
+
+O arquivo consolidado contém registros de múltiplas DREs e dos recortes de avaliação. A interface aplica os filtros de DRE, Escola e Tipo de avaliação diretamente na página. Ao selecionar o tipo de avaliação, o painel atualiza automaticamente o Ano avaliado:
 
 - Sistema de escrita: 1º ano.
 - Escrita: 2º ano.
 - Produção de Texto: 3º ano.
+- Leitura - 1º ano: 1º ano, questão Localização.
+- Leitura - 2º ano: 2º ano, questões Localização e Inferência.
+- Leitura - 3º ano: 3º ano, questões Localização, Inferência e Apreciação e Réplica.
+
+Quando a avaliação selecionada possui mais de uma questão, o filtro `Questão` aparece abaixo de `Tipo de avaliação` e exige a seleção de uma questão específica. Isso evita duplicidade visual no acompanhamento de turmas, já que o mesmo estudante pode ter uma resposta para cada questão de Leitura.
 
 O ranking e o gráfico de comparação entre escolas respeitam o recorte de DRE/tipo/ano, mas continuam mostrando todas as escolas desse recorte mesmo quando uma escola específica está selecionada, destacando a escola filtrada.
 
@@ -95,6 +106,19 @@ Exemplos:
 - `PS -> SCVC` gera ganho `+2`.
 - `SCVC -> A` gera ganho `+2`.
 - `A -> SA` gera ganho `-1`.
+
+## Escala de Leitura
+
+As respostas de Leitura usam a escala abaixo para cálculo de evolução e para manter a ordem visual dos gráficos:
+
+| Resultado | Código |
+| --- | ---: |
+| Sem preenchimento | 1 |
+| Não respondeu | 2 |
+| Inadequada | 3 |
+| Adequada | 4 |
+
+A paleta de Leitura segue a referência visual: verde para `Adequada`, amarelo para `Inadequada`, vermelho para `Não respondeu` e branco para `Sem preenchimento`.
 
 ## Classificação da evolução
 
@@ -217,7 +241,8 @@ A coluna `Turma` é clicável. Ao clicar, abre uma guia na área `Salas abertas`
 
 - DRE.
 - Escola, atualizada conforme DRE e tipo de avaliação.
-- Tipo de avaliação: Sistema de escrita, Escrita ou Produção de Texto.
+- Tipo de avaliação: Sistema de escrita, Escrita, Produção de Texto, Leitura - 1º ano, Leitura - 2º ano ou Leitura - 3º ano.
+- Questão, exibida apenas quando o tipo de avaliação tem mais de uma questão, sem opção agregada em Leitura.
 - Ano avaliado, exibido como informação fixa de escopo derivada do tipo de avaliação.
 - Busca por aluno ou escola na tabela de acompanhamento.
 
@@ -227,12 +252,12 @@ Os botões de download das tabelas continuam exportando a tabela visível em `.x
 
 Na visão `Consolidado`, o card final dos indicadores gerais traz o botão `Baixar consolidado XLSX`, que gera uma pasta de trabalho com múltiplas abas:
 
-- `Resumo`: filtros aplicados, totais, preenchimento e alfabéticos.
+- `Resumo`: filtros aplicados, questão selecionada, totais, preenchimento e categoria-alvo.
 - `Distribuicao`: hipóteses por período, incluindo `Sem dado`.
 - `Escolas Final` e `Escolas Inicial`: distribuição por escola.
 - `Turmas`: total, par válido, ausências por período, sem par e evolução.
-- `Alunos`: lista de alunos do recorte.
-- `Sem dado`: alunos sem par válido.
+- `Alunos`: lista de estudantes/respostas do recorte.
+- `Sem dado`: estudantes/respostas sem par válido.
 
 ## Validação realizada
 
@@ -244,6 +269,8 @@ Foram feitas as seguintes verificações:
 - Renderização do fluxo, heatmap, ranking, distribuição, velocidade e tabela de alunos.
 - Clique em escola no ranking filtrando os indicadores.
 - Filtros de DRE, Escola e Tipo de avaliação atualizando indicadores, gráficos e tabelas, com Ano avaliado derivado do tipo selecionado.
+- Filtro de questão em Leitura - 2º ano e Leitura - 3º ano, exigindo uma questão específica para evitar duplicidade no acompanhamento de turmas.
+- Renderização das categorias de Leitura com as cores de referência.
 - Visão Consolidado com gráfico de rosca, participação e tabela dinâmica por categorias do tipo selecionado.
 - Colunas de sem dado na Inicial, sem dado no 1º bimestre e sem par na tabela de turmas.
 - Geração do workbook consolidado em `.xlsx` validada até o ponto permitido pelo navegador interno; downloads não são suportados no Browser da Codex, mas não houve erros de aplicação.
@@ -252,10 +279,10 @@ Foram feitas as seguintes verificações:
 
 ## Observações de manutenção
 
-- A escala pedagógica fica definida em `LEVELS` e `LEVEL_SCORE`, no início de `dashboard.js`.
-- A ordem visual do Sankey fica definida em `SANKEY_LEVELS`.
+- As escalas pedagógicas ficam definidas em `SYSTEM_LEVELS`, `RUBRIC_LEVELS`, `READING_LEVELS` e `LEVEL_COLORS`, no início de `dashboard.js`.
+- A ordem visual do Sankey vem de `getVisualLevels()`, derivada da escala do tipo de avaliação selecionado.
 - A fonte carregada pela aplicação fica definida em `DATA_PATH`, no início de `dashboard.js`.
 - O esquema compacto do JSON fica definido em `COMPACT_SCHEMA`, no início de `dashboard.js`, e deve acompanhar qualquer mudança feita em `gera_json.py`.
 - As bibliotecas de exportação e captura ficam versionadas localmente em `vendor/`, evitando dependência de CDN durante o uso do painel.
 - Se novos bimestres forem adicionados, será necessário ajustar a regra que identifica `Inicial` e `1° bimestre` em `buildStudentRecords`.
-- Se novas hipóteses de escrita forem incorporadas, será necessário atualizar a escala e as cores correspondentes.
+- Se novas hipóteses de escrita ou categorias de leitura forem incorporadas, será necessário atualizar a escala, as cores correspondentes e os filtros em `gera_json.py`.

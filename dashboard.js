@@ -1,6 +1,7 @@
 const DATA_PATH = "data/lp_avaliacoes_escrita.json";
 const SYSTEM_LEVELS = ["PS", "SSVC", "SCVC", "SA", "A"];
 const RUBRIC_LEVELS = ["PS", "SSVC", "SCVC", "SA", "Nível 01", "Nível 02", "Nível 03", "Nível 04"];
+const READING_LEVELS = ["Sem preenchimento", "Não respondeu", "Inadequada", "Adequada"];
 const LEVEL_COLORS = {
   PS: "#c43d3d",
   SSVC: "#d9851f",
@@ -11,13 +12,20 @@ const LEVEL_COLORS = {
   "Nível 02": "#66bb6a",
   "Nível 03": "#43a047",
   "Nível 04": "#2e7d32",
+  "Adequada": "#76d650",
+  "Inadequada": "#ffda55",
+  "Não respondeu": "#ef7f84",
+  "Sem preenchimento": "#ffffff",
 };
 const EVALUATIONS = {
   se1: {
     id: "se1",
     label: "Sistema de escrita",
+    title: "Sistema de Escrita",
+    domain: "Escrita",
     year: "1",
     levels: SYSTEM_LEVELS,
+    questions: ["Sistema de escrita"],
     targetLevel: "A",
     targetLabel: "Alfabéticos",
     targetTooltip: "alunos na hipótese A",
@@ -25,8 +33,10 @@ const EVALUATIONS = {
   esc2: {
     id: "esc2",
     label: "Escrita",
+    domain: "Escrita",
     year: "2",
     levels: RUBRIC_LEVELS,
+    questions: ["Escrita"],
     targetLevel: "Nível 04",
     targetLabel: "Nível 04",
     targetTooltip: "alunos classificados no Nível 04",
@@ -34,11 +44,49 @@ const EVALUATIONS = {
   pt3: {
     id: "pt3",
     label: "Produção de Texto",
+    domain: "Escrita",
     year: "3",
     levels: RUBRIC_LEVELS,
+    questions: ["Produção de Texto"],
     targetLevel: "Nível 04",
     targetLabel: "Nível 04",
     targetTooltip: "alunos classificados no Nível 04",
+  },
+  lei1: {
+    id: "lei1",
+    label: "Leitura - 1º ano",
+    domain: "Leitura",
+    year: "1",
+    levels: READING_LEVELS,
+    questions: ["Localização"],
+    targetLevel: "Adequada",
+    targetLabel: "Adequadas",
+    targetTooltip: "respostas adequadas",
+    countBlankAsLevel: true,
+  },
+  lei2: {
+    id: "lei2",
+    label: "Leitura - 2º ano",
+    domain: "Leitura",
+    year: "2",
+    levels: READING_LEVELS,
+    questions: ["Localização", "Inferência"],
+    targetLevel: "Adequada",
+    targetLabel: "Adequadas",
+    targetTooltip: "respostas adequadas",
+    countBlankAsLevel: true,
+  },
+  lei3: {
+    id: "lei3",
+    label: "Leitura - 3º ano",
+    domain: "Leitura",
+    year: "3",
+    levels: READING_LEVELS,
+    questions: ["Localização", "Inferência", "Apreciação e Réplica"],
+    targetLevel: "Adequada",
+    targetLabel: "Adequadas",
+    targetTooltip: "respostas adequadas",
+    countBlankAsLevel: true,
   },
 };
 const STATUS_COLORS = {
@@ -59,6 +107,19 @@ const COMPACT_SCHEMA = {
   ano: 8,
   bimestre: 9,
 };
+const COMPACT_SCHEMA_WITH_QUESTION = {
+  evaluation: 0,
+  question: 1,
+  dre: 2,
+  schoolCode: 3,
+  school: 4,
+  className: 5,
+  studentId: 6,
+  studentName: 7,
+  response: 8,
+  ano: 9,
+  bimestre: 10,
+};
 
 const state = {
   rawRows: [],
@@ -67,6 +128,7 @@ const state = {
   dres: [],
   anos: [],
   selectedEvaluation: "se1",
+  selectedQuestion: "__all__",
   selectedDre: "__all__",
   selectedSchool: "__all__",
   selectedAno: "1",
@@ -108,6 +170,22 @@ function getEvaluationConfig() {
   return EVALUATIONS[state.selectedEvaluation] || EVALUATIONS.se1;
 }
 
+function isReadingEvaluation() {
+  return getEvaluationConfig().domain === "Leitura";
+}
+
+function getRecordNoun() {
+  return isReadingEvaluation() ? "respostas" : "alunos";
+}
+
+function getRecordNounTitle() {
+  return isReadingEvaluation() ? "Respostas" : "Alunos";
+}
+
+function getQuestions() {
+  return getEvaluationConfig().questions || [getEvaluationConfig().label];
+}
+
 function getLevels() {
   return getEvaluationConfig().levels;
 }
@@ -133,6 +211,7 @@ function getEvaluationYear() {
 }
 
 function getCategoryLabel() {
+  if (isReadingEvaluation()) return "Resultado";
   return state.selectedEvaluation === "se1" ? "Hipótese" : "Categoria";
 }
 
@@ -143,7 +222,14 @@ function parseJsonRows(text) {
 
 function normalizeLevel(value) {
   const text = (value || "").trim();
-  if (!text || text.toUpperCase() === "SEM PREENCHIMENTO") return null;
+  const normalized = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+  if (getEvaluationConfig().countBlankAsLevel) {
+    if (!text || normalized === "SEM PREENCHIMENTO") return "Sem preenchimento";
+    if (normalized === "NAO RESPONDEU") return "Não respondeu";
+    if (normalized === "INADEQUADA") return "Inadequada";
+    if (normalized === "ADEQUADA") return "Adequada";
+  }
+  if (!text || normalized === "SEM PREENCHIMENTO") return null;
   const nivel = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/^NIVEL\s*0?([1-4])$/i);
   if (nivel) return `Nível 0${nivel[1]}`;
   const raw = text.toUpperCase().replace(/_+$/, "");
@@ -161,19 +247,21 @@ function classifyGain(gain) {
 
 function readSourceRow(row) {
   if (Array.isArray(row)) {
+    const hasQuestion = row.length > COMPACT_SCHEMA.bimestre + 1;
     const hasEvaluation = row.length > 9;
+    const schema = hasQuestion ? COMPACT_SCHEMA_WITH_QUESTION : COMPACT_SCHEMA;
     return {
-      evaluation: hasEvaluation ? row[COMPACT_SCHEMA.evaluation] : "se1",
-      question: hasEvaluation ? getEvaluationConfig().label : "Sistema de escrita",
-      studentId: hasEvaluation ? row[COMPACT_SCHEMA.studentId] : row[4],
-      response: hasEvaluation ? row[COMPACT_SCHEMA.response] : row[6],
-      bimestre: hasEvaluation ? row[COMPACT_SCHEMA.bimestre] : row[8],
-      studentName: hasEvaluation ? row[COMPACT_SCHEMA.studentName] : row[5],
-      schoolCode: hasEvaluation ? row[COMPACT_SCHEMA.schoolCode] : row[1],
-      school: hasEvaluation ? row[COMPACT_SCHEMA.school] : row[2],
-      dre: hasEvaluation ? row[COMPACT_SCHEMA.dre] : row[0],
-      ano: hasEvaluation ? row[COMPACT_SCHEMA.ano] : row[7],
-      className: hasEvaluation ? row[COMPACT_SCHEMA.className] : row[3],
+      evaluation: hasEvaluation ? row[schema.evaluation] : "se1",
+      question: hasQuestion ? row[schema.question] : hasEvaluation ? getEvaluationConfig().label : "Sistema de escrita",
+      studentId: hasEvaluation ? row[schema.studentId] : row[4],
+      response: hasEvaluation ? row[schema.response] : row[6],
+      bimestre: hasEvaluation ? row[schema.bimestre] : row[8],
+      studentName: hasEvaluation ? row[schema.studentName] : row[5],
+      schoolCode: hasEvaluation ? row[schema.schoolCode] : row[1],
+      school: hasEvaluation ? row[schema.school] : row[2],
+      dre: hasEvaluation ? row[schema.dre] : row[0],
+      ano: hasEvaluation ? row[schema.ano] : row[7],
+      className: hasEvaluation ? row[schema.className] : row[3],
     };
   }
 
@@ -200,16 +288,19 @@ function buildStudentRecords(rows) {
     const source = readSourceRow(row);
     if (source.evaluation && source.evaluation !== state.selectedEvaluation) return;
     if (!source.evaluation && source.question && source.question !== "Sistema de escrita") return;
+    if (state.selectedQuestion !== "__all__" && source.question !== state.selectedQuestion) return;
     const studentId = source.studentId;
     if (!studentId) return;
     const level = normalizeLevel(source.response);
     const period = source.bimestre === "Inicial" ? "initial" : source.bimestre === "1° bimestre" ? "final" : null;
     if (!period) return;
+    const recordKey = `${studentId}::${source.question || ""}`;
 
-    if (!byStudent.has(studentId)) {
-      byStudent.set(studentId, {
+    if (!byStudent.has(recordKey)) {
+      byStudent.set(recordKey, {
         id: studentId,
         name: source.studentName,
+        question: source.question,
         schoolCode: source.schoolCode,
         school: source.school,
         dre: source.dre,
@@ -220,9 +311,10 @@ function buildStudentRecords(rows) {
       });
     }
 
-    const record = byStudent.get(studentId);
+    const record = byStudent.get(recordKey);
     if (level) {
       record[period] = level;
+      record.question = source.question || record.question;
       record.school = source.school || record.school;
       record.schoolCode = source.schoolCode || record.schoolCode;
       record.className = source.className || record.className;
@@ -369,16 +461,21 @@ function renderKpis(records) {
   const initialAlphaCount = summary.paired.filter((record) => record.initial === target).length;
   const alphaCountDelta = finalAlphaCount - initialAlphaCount;
   const alphaDelta = summary.finalAlpha - summary.initialAlpha;
+  const noun = getRecordNoun();
+  const nounTitle = getRecordNounTitle();
+  const scoreHint = isReadingEvaluation()
+    ? "Média dos ganhos: Sem preenchimento=1, Não respondeu=2, Inadequada=3 e Adequada=4."
+    : "Média dos ganhos de nível: PS=1, SSVC=2, SCVC=3, SA=4 e A=5.";
 
   const items = [
-    [`${targetLabel} (1ºBI)`, formatPct(summary.finalAlpha), `${formatNumber(finalAlphaCount)} alunos`, `Percentual e quantidade de ${getEvaluationConfig().targetTooltip} no 1º bimestre, entre alunos com par válido.`],
-    [`${targetLabel} (diferença)`, `${alphaDelta >= 0 ? "+" : ""}${formatPct(alphaDelta)}`, `${alphaCountDelta >= 0 ? "+" : ""}${formatNumber(alphaCountDelta)} alunos`, `Diferença entre ${getEvaluationConfig().targetTooltip} no 1º bimestre e na avaliação inicial, em percentual e quantidade.`],
-    ["Alunos com par válido", formatPct(summary.paired.length / totalStudentsInScope), `${formatNumber(summary.paired.length)} alunos`, "Alunos com hipótese válida na avaliação inicial e no 1º bimestre; são os únicos usados nos cálculos de evolução."],
-    ["Sem par válido", formatPct(missingPair / totalStudentsInScope), `${formatNumber(missingPair)} alunos`, "Alunos sem hipótese válida em um dos dois períodos; ficam fora dos cálculos de evolução."],
-    ["Melhoraram", formatPct(summary.improved / summary.total), `${formatNumber(summary.improved)} alunos`, "Alunos cujo nível numérico aumentou entre a inicial e o 1º bimestre."],
-    ["Mantiveram", formatPct(summary.stable / summary.total), `${formatNumber(summary.stable)} alunos`, "Alunos que permaneceram na mesma hipótese entre a inicial e o 1º bimestre."],
-    ["Baixaram", formatPct(summary.regressed / summary.total), `${formatNumber(summary.regressed)} alunos`, "Alunos cujo nível numérico diminuiu entre a inicial e o 1º bimestre."],
-    ["Índice de Evolução", formatDecimal(summary.avgGain), "Ganho médio de níveis", "Média dos ganhos de nível: PS=1, SSVC=2, SCVC=3, SA=4 e A=5."],
+    [`${targetLabel} (1ºBI)`, formatPct(summary.finalAlpha), `${formatNumber(finalAlphaCount)} ${noun}`, `Percentual e quantidade de ${getEvaluationConfig().targetTooltip} no 1º bimestre, entre ${noun} com par válido.`],
+    [`${targetLabel} (diferença)`, `${alphaDelta >= 0 ? "+" : ""}${formatPct(alphaDelta)}`, `${alphaCountDelta >= 0 ? "+" : ""}${formatNumber(alphaCountDelta)} ${noun}`, `Diferença entre ${getEvaluationConfig().targetTooltip} no 1º bimestre e na avaliação inicial, em percentual e quantidade.`],
+    [`${nounTitle} com par válido`, formatPct(summary.paired.length / totalStudentsInScope), `${formatNumber(summary.paired.length)} ${noun}`, `${nounTitle} com resultado válido na avaliação inicial e no 1º bimestre; são usadas nos cálculos de evolução.`],
+    ["Sem par válido", formatPct(missingPair / totalStudentsInScope), `${formatNumber(missingPair)} ${noun}`, `${nounTitle} sem resultado válido em um dos dois períodos; ficam fora dos cálculos de evolução.`],
+    ["Melhoraram", formatPct(summary.improved / summary.total), `${formatNumber(summary.improved)} ${noun}`, `${nounTitle} cujo nível numérico aumentou entre a inicial e o 1º bimestre.`],
+    ["Mantiveram", formatPct(summary.stable / summary.total), `${formatNumber(summary.stable)} ${noun}`, `${nounTitle} que permaneceram na mesma categoria entre a inicial e o 1º bimestre.`],
+    ["Baixaram", formatPct(summary.regressed / summary.total), `${formatNumber(summary.regressed)} ${noun}`, `${nounTitle} cujo nível numérico diminuiu entre a inicial e o 1º bimestre.`],
+    ["Índice de Evolução", formatDecimal(summary.avgGain), "Ganho médio de níveis", scoreHint],
   ];
 
   document.querySelector("#kpis").innerHTML = items.map(([label, value, note, tooltip]) => `
@@ -437,13 +534,17 @@ function renderSankey(records) {
     const [r, g, b] = [hex.slice(1,3), hex.slice(3,5), hex.slice(5,7)].map(h => parseInt(h, 16));
     return (0.299*r + 0.587*g + 0.114*b) / 255 > 0.52 ? '#18212f' : '#ffffff';
   };
+  const maxTextW = 100;
   const nodeBlock = (level, x, count) => {
     const bg = LEVEL_COLORS[level];
     const fg = nodeFg(bg);
     const fgMeta = fg === '#ffffff' ? 'rgba(255,255,255,0.88)' : 'rgba(24,33,47,0.68)';
+    const stroke = level === "Sem preenchimento" ? ' stroke="#d8e0ec"' : "";
+    const approxW = level.length * nameFontSize * 0.65;
+    const fitAttr = approxW > maxTextW ? ` textLength="${maxTextW}" lengthAdjust="spacingAndGlyphs"` : "";
     return `
-    <rect x="${x}" y="${y[level] - halfH}" width="116" height="${blockH}" rx="7" fill="${bg}" opacity="0.96"></rect>
-    <text x="${x + 58}" y="${y[level] + nameOffY}" text-anchor="middle" fill="${fg}" font-size="${nameFontSize}" font-weight="850">${level}</text>
+    <rect x="${x}" y="${y[level] - halfH}" width="116" height="${blockH}" rx="7" fill="${bg}" opacity="0.96"${stroke}></rect>
+    <text x="${x + 58}" y="${y[level] + nameOffY}" text-anchor="middle" fill="${fg}" font-size="${nameFontSize}" font-weight="850"${fitAttr}>${level}</text>
     <text class="node-meta" x="${x + 58}" y="${y[level] + metaOffY}" text-anchor="middle" fill="${fgMeta}">${formatNumber(count)} · ${formatPct(count / total)}</text>
   `;
   };
@@ -454,7 +555,7 @@ function renderSankey(records) {
     </g>
   `).join("");
 
-  document.querySelector("#pairCount").textContent = `${formatNumber(records.length)} pares`;
+  document.querySelector("#pairCount").textContent = `${formatNumber(records.length)} pares de ${getRecordNoun()}`;
   document.querySelector("#sankey").innerHTML = `
     <svg viewBox="0 0 780 ${height}" preserveAspectRatio="xMidYMid meet">
       <text class="node-label" x="18" y="28">Inicial</text>
@@ -652,7 +753,8 @@ function missingStats(records) {
 function getScopeTitle() {
   const school = getSchoolLabel();
   const year = `${state.selectedAno}º ano`;
-  return state.selectedSchool === "__all__" ? `${school} · ${year}` : `${school} · ${year}`;
+  const question = isReadingEvaluation() && state.selectedQuestion !== "__all__" ? ` · ${state.selectedQuestion}` : "";
+  return state.selectedSchool === "__all__" ? `${school} · ${year}${question}` : `${school} · ${year}${question}`;
 }
 
 function renderConsolidadoKpis(records) {
@@ -661,13 +763,15 @@ function renderConsolidadoKpis(records) {
   const missing = missingStats(records);
   const target = getTargetLevel();
   const targetLabel = getTargetLabel();
+  const noun = getRecordNoun();
+  const nounTitle = getRecordNounTitle();
   const items = [
-    ["Total de alunos", formatNumber(records.length), "no recorte selecionado", "Total de alunos registrados no recorte, incluindo aqueles sem par válido."],
-    ["Com par válido", formatPct(missing.pairedPct), `${formatNumber(missing.paired)} alunos`, "Alunos com hipótese válida na avaliação inicial e no 1º bimestre."],
-    [`${targetLabel} – Inicial`, formatPct(initial.pct[target]), `${formatNumber(initial.counts[target])} alunos`, `Percentual de ${getEvaluationConfig().targetTooltip} na avaliação inicial, sobre todos os alunos do recorte.`],
-    [`${targetLabel} – 1ºBI`, formatPct(fin.pct[target]), `${formatNumber(fin.counts[target])} alunos`, `Percentual de ${getEvaluationConfig().targetTooltip} no 1º bimestre, sobre todos os alunos do recorte.`],
-    ["Sem registro – Inicial", formatPct(missing.missingInitialPct), `${formatNumber(missing.missingInitial)} alunos`, "Alunos sem hipótese registrada ou inválida na avaliação inicial."],
-    ["Sem registro – 1ºBI", formatPct(fin.pct.sem), `${formatNumber(fin.counts.sem)} alunos`, "Alunos sem hipótese registrada ou inválida no 1º bimestre."],
+    [`Total de ${noun}`, formatNumber(records.length), "no recorte selecionado", `Total de ${noun} registrados no recorte, incluindo aqueles sem par válido.`],
+    ["Com par válido", formatPct(missing.pairedPct), `${formatNumber(missing.paired)} ${noun}`, `${nounTitle} com resultado válido na avaliação inicial e no 1º bimestre.`],
+    [`${targetLabel} – Inicial`, formatPct(initial.pct[target]), `${formatNumber(initial.counts[target])} ${noun}`, `Percentual de ${getEvaluationConfig().targetTooltip} na avaliação inicial, sobre o total de ${noun} do recorte.`],
+    [`${targetLabel} – 1ºBI`, formatPct(fin.pct[target]), `${formatNumber(fin.counts[target])} ${noun}`, `Percentual de ${getEvaluationConfig().targetTooltip} no 1º bimestre, sobre o total de ${noun} do recorte.`],
+    ["Sem registro – Inicial", formatPct(missing.missingInitialPct), `${formatNumber(missing.missingInitial)} ${noun}`, `${nounTitle} sem resultado registrado ou válido na avaliação inicial.`],
+    ["Sem registro – 1ºBI", formatPct(fin.pct.sem), `${formatNumber(fin.counts.sem)} ${noun}`, `${nounTitle} sem resultado registrado ou válido no 1º bimestre.`],
   ];
   document.querySelector("#consolidado-kpis").innerHTML = items.map(([label, value, note, tooltip]) => `
     <article class="kpi">
@@ -1268,7 +1372,8 @@ function sortStudents(a, b) {
   return direction * result ||
     a.school.localeCompare(b.school, "pt-BR") ||
     a.className.localeCompare(b.className, "pt-BR", { numeric: true }) ||
-    a.name.localeCompare(b.name, "pt-BR");
+    String(a.question || "").localeCompare(String(b.question || ""), "pt-BR") ||
+    getStudentDisplayName(a).localeCompare(getStudentDisplayName(b), "pt-BR");
 }
 
 function getClassroomTabId(schoolCode, className) {
@@ -1328,7 +1433,7 @@ function renderClassroomView(tab) {
       <div>
         <p class="eyebrow">Visualização da turma</p>
         <h2>Turma ${escapeHtml(tab.className)}</h2>
-        <p class="classroom-subtitle">${escapeHtml(schoolName)} · ${formatNumber(records.length)} alunos no recorte</p>
+        <p class="classroom-subtitle">${escapeHtml(schoolName)} · ${formatNumber(records.length)} ${getRecordNoun()} no recorte</p>
       </div>
       <div class="classroom-toolbar" aria-label="Selecionar período">
         <button type="button" data-classroom-period="initial" class="${period === "initial" ? "active" : ""}">Inicial</button>
@@ -1355,9 +1460,9 @@ function renderClassroomView(tab) {
               <strong>${group.level}</strong>
               <small>${formatNumber(count)} · ${formatPct(pct)}</small>
             </div>
-            <div class="student-cloud" aria-label="${group.level}: ${formatNumber(count)} alunos">
+            <div class="student-cloud" aria-label="${group.level}: ${formatNumber(count)} ${getRecordNoun()}">
               ${group.records.map((record) => `
-                <span class="student-marker" style="--student-color:${group.color}" title="${escapeHtml(getStudentDisplayName(record))} · ${group.level}">
+                <span class="student-marker" style="--student-color:${group.color}" title="${escapeHtml(getStudentDisplayName(record))}${record.question ? ` · ${escapeHtml(record.question)}` : ""} · ${group.level}">
                   ${evolutionMarker(record, period)}
                   <span class="student-head"></span>
                   <span class="student-body"></span>
@@ -1434,10 +1539,11 @@ function getSchoolLabel() {
 function renderFilterSummary(records) {
   const filters = [
     ["Avaliação", getEvaluationConfig().label],
+    ...(isReadingEvaluation() ? [["Questão", state.selectedQuestion === "__all__" ? "Todas as questões" : state.selectedQuestion]] : []),
     ["DRE", state.selectedDre === "__all__" ? "Todas as DREs" : state.selectedDre],
     ["Escola", getSchoolLabel()],
     ["Ano", `${state.selectedAno}º ano`],
-    ["Alunos no recorte", formatNumber(records.length)],
+    [`${getRecordNounTitle()} no recorte`, formatNumber(records.length)],
   ];
 
   document.querySelector("#filterSummary").innerHTML = `
@@ -1477,13 +1583,36 @@ function populateEvaluationFilter() {
   select.value = state.selectedEvaluation;
 }
 
+function populateQuestionFilter() {
+  const wrap = document.querySelector("#questionFilterWrap");
+  const select = document.querySelector("#questionFilter");
+  if (!wrap || !select) return;
+  const config = getEvaluationConfig();
+  const questions = getQuestions();
+  const show = config.domain === "Leitura" && questions.length > 1;
+  wrap.hidden = !show;
+  if (!show) {
+    state.selectedQuestion = "__all__";
+    select.innerHTML = `<option value="__all__">Todas as questões</option>`;
+    select.value = "__all__";
+    return;
+  }
+  select.innerHTML = questions.map((question) =>
+    `<option value="${escapeHtml(question)}">${escapeHtml(question)}</option>`
+  ).join("");
+  if (!questions.includes(state.selectedQuestion)) {
+    state.selectedQuestion = questions[0];
+  }
+  select.value = state.selectedQuestion;
+}
+
 function updateEvaluationContext() {
   const config = getEvaluationConfig();
   state.selectedAno = config.year;
   const yearLabel = document.querySelector("#evaluationYearLabel");
   if (yearLabel) yearLabel.textContent = `${config.year}º ano`;
   const topbarTitle = document.querySelector("#topbarTitle");
-  if (topbarTitle) topbarTitle.textContent = config.label;
+  if (topbarTitle) topbarTitle.textContent = config.title || config.label;
 }
 
 function updateLevelControls() {
@@ -1505,12 +1634,16 @@ function updateLevelControls() {
   }
   const target = getTargetLevel();
   const targetLabel = getTargetLabel();
+  const nounTitle = getRecordNounTitle();
   [
     ["#rankingSortBy", "finalAlphaPct", `${targetLabel} (1ºBI)`],
     ["#rankingSortBy", "alphaDeltaPct", `${targetLabel} (diferença)`],
+    ["#rankingSortBy", "total", nounTitle],
     ["#dreRankingSortBy", "finalAlphaPct", `${targetLabel} (1ºBI)`],
     ["#dreRankingSortBy", "alphaDeltaPct", `${targetLabel} (diferença)`],
+    ["#dreRankingSortBy", "total", nounTitle],
     ["#classesSortBy", "finalAlphaPct", `${targetLabel} (1ºBI)`],
+    ["#classesSortBy", "total", nounTitle],
   ].forEach(([selector, value, label]) => {
     const option = document.querySelector(`${selector} option[value="${value}"]`);
     if (option) option.textContent = label;
@@ -1529,19 +1662,24 @@ function updateLevelControls() {
 
 function updateTableLabels() {
   const targetLabel = getTargetLabel();
+  const nounTitle = getRecordNounTitle();
   const setText = (selector, text) => {
     const element = document.querySelector(selector);
     if (element) element.textContent = text;
   };
+  setText("#dreRankingTable thead th:nth-child(2)", nounTitle);
   setText("#dreRankingTable thead th:nth-child(3)", `${targetLabel} (1ºBI)`);
   setText("#dreRankingTable thead th:nth-child(4)", `${targetLabel} (diferença)`);
+  setText("#rankingTable thead th:nth-child(2)", nounTitle);
   setText("#rankingTable thead th:nth-child(3)", `${targetLabel} (1ºBI)`);
   setText("#rankingTable thead th:nth-child(4)", `${targetLabel} (diferença)`);
-  setText("#classesTable thead th:nth-child(8)", `${targetLabel} (1ºBI)`);
+  setText("#classesTable thead th:nth-child(4)", nounTitle);
+  setText("#classesTable thead th:nth-child(9)", `${targetLabel} (1ºBI)`);
 }
 
 function rebuildRecordsForEvaluation() {
   updateEvaluationContext();
+  populateQuestionFilter();
   state.records = buildStudentRecords(state.rawRows);
   state.scatterXLevel = getLevels()[0];
   state.scatterYLevel = getTargetLevel();
@@ -1694,6 +1832,11 @@ async function init() {
 
   document.querySelector("#evaluationFilter").addEventListener("change", (event) => {
     state.selectedEvaluation = event.target.value;
+    state.selectedQuestion = "__all__";
+    renderAsync(() => { rebuildRecordsForEvaluation(); render(); });
+  });
+  document.querySelector("#questionFilter").addEventListener("change", (event) => {
+    state.selectedQuestion = event.target.value;
     renderAsync(() => { rebuildRecordsForEvaluation(); render(); });
   });
   document.querySelector("#dreFilter").addEventListener("change", (event) => {
@@ -1900,10 +2043,26 @@ async function init() {
 
   const copyIcon = `<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="9" height="9" rx="1.5"/><path d="M5 3.5A1.5 1.5 0 0 1 6.5 2H13a1.5 1.5 0 0 1 1.5 1.5v6.5A1.5 1.5 0 0 1 13 11.5"/></svg>`;
   const copiedIcon = `<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8.5l3.5 3.5 7-7"/></svg>`;
+  const expandIcon = `<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2H2v4"/><path d="M2 2l5 5"/><path d="M10 14h4v-4"/><path d="M14 14l-5-5"/></svg>`;
   document.querySelectorAll("article.panel").forEach((panel) => {
     if (panel.querySelector(".table-wrap")) return;
     const head = panel.querySelector(".panel-head");
     if (!head) return;
+    let actions = head.querySelector(".panel-actions");
+    if (!actions) {
+      actions = document.createElement("div");
+      actions.className = "panel-actions";
+      head.appendChild(actions);
+    }
+    const fullBtn = document.createElement("button");
+    fullBtn.className = "card-fullscreen-btn";
+    fullBtn.type = "button";
+    fullBtn.title = "Ver em tela cheia";
+    fullBtn.setAttribute("aria-label", "Ver gráfico em tela cheia");
+    fullBtn.innerHTML = expandIcon;
+    fullBtn.addEventListener("click", () => openFullscreenPanel(panel));
+    actions.appendChild(fullBtn);
+
     const btn = document.createElement("button");
     btn.className = "card-copy-btn";
     btn.type = "button";
@@ -1934,13 +2093,52 @@ async function init() {
         btn.disabled = false;
       }
     });
-    head.appendChild(btn);
+    actions.appendChild(btn);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeFullscreenPanel();
   });
 
   setLoadProgress(0.92, "Renderizando painel…");
   render();
   setLoadProgress(1.0, "Pronto!");
   setTimeout(hideLoader, 120);
+}
+
+function closeFullscreenPanel() {
+  const overlay = document.querySelector(".fullscreen-overlay");
+  if (!overlay) return;
+  overlay.remove();
+  document.body.classList.remove("fullscreen-open");
+}
+
+function openFullscreenPanel(panel) {
+  closeFullscreenPanel();
+  const clone = panel.cloneNode(true);
+  clone.querySelectorAll(".panel-actions, .card-copy-btn, .card-fullscreen-btn").forEach((node) => node.remove());
+  clone.classList.add("fullscreen-panel");
+
+  const overlay = document.createElement("div");
+  overlay.className = "fullscreen-overlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Gráfico em tela cheia");
+  overlay.innerHTML = `
+    <div class="fullscreen-shell">
+      <button class="fullscreen-close" type="button" aria-label="Fechar tela cheia" title="Fechar">
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+      </button>
+    </div>
+  `;
+  overlay.querySelector(".fullscreen-shell").appendChild(clone);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) closeFullscreenPanel();
+  });
+  overlay.querySelector(".fullscreen-close").addEventListener("click", closeFullscreenPanel);
+  document.body.appendChild(overlay);
+  document.body.classList.add("fullscreen-open");
+  overlay.querySelector(".fullscreen-close").focus();
 }
 
 function parseExportValue(value) {
@@ -1980,7 +2178,7 @@ function getPeriodLabel(period) {
 }
 
 function distributionRows(records) {
-  const rows = [["Período", getCategoryLabel(), "Alunos", "%"]];
+  const rows = [["Período", getCategoryLabel(), getRecordNounTitle(), "%"]];
   [
     ["initial", consolidadoLevelStats(records, "initial")],
     ["final", consolidadoLevelStats(records, "final")],
@@ -2051,7 +2249,7 @@ function classExportRows(records) {
 }
 
 function studentExportRows(records) {
-  const rows = [["DRE", "Escola", "Código EOL Escola", "Ano", "Turma", "Aluno", "Código EOL Estudante", "Inicial", "1º bimestre", "Ganho", "Situação", "Sem dado Inicial", "Sem dado 1ºBI"]];
+  const rows = [["DRE", "Escola", "Código EOL Escola", "Ano", "Turma", "Questão", "Aluno", "Código EOL Estudante", "Inicial", "1º bimestre", "Ganho", "Situação", "Sem dado Inicial", "Sem dado 1ºBI"]];
   records
     .slice()
     .sort((a, b) => a.school.localeCompare(b.school, "pt-BR") || a.className.localeCompare(b.className, "pt-BR", { numeric: true }) || getStudentDisplayName(a).localeCompare(getStudentDisplayName(b), "pt-BR"))
@@ -2062,6 +2260,7 @@ function studentExportRows(records) {
         record.schoolCode,
         record.ano,
         record.className,
+        record.question || "",
         getStudentDisplayName(record),
         record.id,
         record.initial || "Sem dado",
@@ -2095,10 +2294,11 @@ function exportConsolidadoWorkbook() {
   const summaryRows = [
     ["Campo", "Valor"],
     ["Tipo de avaliação", getEvaluationConfig().label],
+    ["Questão", isReadingEvaluation() ? (state.selectedQuestion === "__all__" ? "Todas as questões" : state.selectedQuestion) : getQuestions()[0]],
     ["DRE", state.selectedDre === "__all__" ? "Todas as DREs" : state.selectedDre],
     ["Escola", getSchoolLabel()],
     ["Ano", `${state.selectedAno}º ano`],
-    ["Total de alunos", records.length],
+    [`Total de ${getRecordNoun()}`, records.length],
     ["Com par válido", missing.paired],
     ["% com par válido", missing.pairedPct],
     ["Sem dado Inicial", missing.missingInitial],
